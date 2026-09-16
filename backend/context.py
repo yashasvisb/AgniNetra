@@ -18,10 +18,60 @@ if not os.path.exists(GRID_PATH):
     print("Downloading contextual grid from Google Drive...")
     gdown.download(id=GDRIVE_FILE_ID, output=GRID_PATH, quiet=False)
 
+# Only load the columns that build_live_features / get_gis_layer
+# actually use, instead of every column in the file.
+NEEDED_COLUMNS = [
+    "latitude",
+    "longitude",
+    "dist_to_industry_m",
+    "nearest_industry_high_heat",
+    "industry_count_1km",
+    "industry_count_5km",
+    "dist_to_osm_facility_m",
+    "osm_count_1km",
+    "osm_count_5km",
+    "NDVI",
+    "NDWI",
+    "NDBI",
+    "DW_bare_2024",
+    "DW_built_2024",
+    "DW_crops_2024",
+    "DW_flooded_vegetation_2024",
+    "DW_grass_2024",
+    "DW_shrub_2024",
+    "DW_trees_2024",
+    "DW_water_2024",
+    "DW_dominant_2024",
+    "CO",
+    "NO2",
+    "SO2",
+    "CH4",
+    "historical_fire_count",
+    "CO_anomaly",
+    "NO2_anomaly",
+    "SO2_anomaly",
+    "CH4_anomaly",
+    "background_industrial_risk",
+]
+
+# Downcast numeric columns to float32 instead of the pandas
+# default float64 — halves memory for those columns with no
+# meaningful precision loss for this use case.
+DTYPES = {
+    col: "float32"
+    for col in NEEDED_COLUMNS
+    if col not in ("DW_dominant_2024",)
+}
+
 print("Loading Odisha contextual grid...")
-grid = pd.read_csv(GRID_PATH)
+grid = pd.read_csv(
+    GRID_PATH,
+    usecols=NEEDED_COLUMNS,
+    dtype=DTYPES,
+)
 
 print(f"Context grid loaded: {len(grid):,} locations")
+
 
 # ---------------------------------------------------------
 # Coordinate conversion
