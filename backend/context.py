@@ -1,3 +1,5 @@
+import os
+import gdown
 import pandas as pd
 import numpy as np
 from scipy.spatial import cKDTree
@@ -8,13 +10,18 @@ from pyproj import Transformer
 # Load Odisha contextual grid
 # ---------------------------------------------------------
 
-GRID_PATH = "/Users/ysb/Downloads/Odisha_Wide_Contextual_Risk_Grid_with_NDVI_NDWI_NDBI.csv"
+GRID_PATH = "data/Odisha_Wide_Contextual_Risk_Grid_with_NDVI_NDWI_NDBI.csv"
+GDRIVE_FILE_ID = "PASTE_YOUR_FILE_ID_HERE"
+
+if not os.path.exists(GRID_PATH):
+    os.makedirs(os.path.dirname(GRID_PATH), exist_ok=True)
+    print("Downloading contextual grid from Google Drive...")
+    gdown.download(id=GDRIVE_FILE_ID, output=GRID_PATH, quiet=False)
 
 print("Loading Odisha contextual grid...")
 grid = pd.read_csv(GRID_PATH)
 
 print(f"Context grid loaded: {len(grid):,} locations")
-
 
 # ---------------------------------------------------------
 # Coordinate conversion
