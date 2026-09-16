@@ -1,0 +1,90 @@
+{
+  "sample_input_row": {
+    "acq_time": 1920,
+    "source_year": 2022,
+    "month": 10,
+    "day_of_year": 289,
+    "latitude": 20.9702262878,
+    "longitude": 85.1695861816,
+    "bright_ti4": 328.6499938965,
+    "bright_ti5": 287.5700073242,
+    "frp": 2.2300000191,
+    "frp_log": 1.1724821329,
+    "scan": 0.3600000143,
+    "track": 0.5699999928,
+    "month_sin": -0.8660253882,
+    "month_cos": 0.5,
+    "daynight_binary": 0,
+    "x_m": 933712.75,
+    "y_m": 2324507.5,
+    "dist_to_industry_m": 4534.9916992188,
+    "nearest_industry_high_heat": 1,
+    "industry_count_1km": 0,
+    "industry_count_5km": 40,
+    "dist_to_osm_facility_m": 334.5117492676,
+    "osm_count_1km": 1,
+    "osm_count_5km": 6,
+    "NDVI": 0.0140111921,
+    "NDWI": -0.0139267072,
+    "NDBI": 0.1815607995,
+    "grid_DW_bare": 0.3243994713,
+    "grid_DW_built": 0.0479531139,
+    "grid_DW_crops": 0.0304257683,
+    "grid_DW_flooded_vegetation": 0.0530835427,
+    "grid_DW_grass": 0.0529954582,
+    "grid_DW_shrub": 0.1061615869,
+    "grid_DW_trees": 0.040639922,
+    "grid_DW_water": 0.2222969383,
+    "CO": 0.0467223711,
+    "NO2": 0.0001436096,
+    "SO2": 0.000623587,
+    "CH4": 1917.7003173828,
+    "ch4_available": 1,
+    "persistence_count": 1666,
+    "CO_anomaly": 2.350965023,
+    "NO2_anomaly": 5.9684324265,
+    "SO2_anomaly": 4.735013485,
+    "CH4_anomaly": 0.0822390392,
+    "industrial_anomaly_score": 0.4907771945,
+    "confidence": "n",
+    "nearest_industry_sector": "Chemicals and Chemical products",
+    "nearest_osm_feature_type": "quarry",
+    "grid_DW_dominant": "7"
+  },
+  "true_label": "Persistent Thermal Source",
+  "predictions": {
+    "random_forest": {
+      "predicted_class": "Persistent Thermal Source",
+      "predicted_class_index": 4,
+      "class_probabilities": {
+        "Agricultural/Vegetation": 0.001876649802023757,
+        "Forest/Natural": 2.420839679039847e-05,
+        "Industrial Fire": 0.0,
+        "Other Thermal Event": 0.014455016293973572,
+        "Persistent Thermal Source": 0.9836441255072123
+      }
+    },
+    "xgboost": {
+      "predicted_class": "Persistent Thermal Source",
+      "predicted_class_index": 4,
+      "class_probabilities": {
+        "Agricultural/Vegetation": 6.44927131361328e-05,
+        "Forest/Natural": 2.628064976306632e-05,
+        "Industrial Fire": 2.295950480402098e-06,
+        "Other Thermal Event": 0.002800051122903824,
+        "Persistent Thermal Source": 0.9971068501472473
+      }
+    },
+    "lightgbm": {
+      "predicted_class": "Persistent Thermal Source",
+      "predicted_class_index": 4,
+      "class_probabilities": {
+        "Agricultural/Vegetation": 2.262886822576022e-05,
+        "Forest/Natural": 1.3776343649490886e-05,
+        "Industrial Fire": 1.4588382359813972e-08,
+        "Other Thermal Event": 0.0028656569267599373,
+        "Persistent Thermal Source": 0.9970979232729825
+      }
+    }
+  }
+}

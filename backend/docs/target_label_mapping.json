@@ -1,0 +1,7 @@
+{
+  "Agricultural/Vegetation": 0,
+  "Forest/Natural": 1,
+  "Industrial Fire": 2,
+  "Other Thermal Event": 3,
+  "Persistent Thermal Source": 4
+}
