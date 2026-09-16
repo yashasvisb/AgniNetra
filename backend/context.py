@@ -11,7 +11,7 @@ from pyproj import Transformer
 # ---------------------------------------------------------
 
 GRID_PATH = "data/Odisha_Wide_Contextual_Risk_Grid_with_NDVI_NDWI_NDBI.csv"
-GDRIVE_FILE_ID = "PASTE_YOUR_FILE_ID_HERE"
+GDRIVE_FILE_ID = "1zhiYBne1j9l85XtOU1MwGcbVeC1ssJqD"
 
 if not os.path.exists(GRID_PATH):
     os.makedirs(os.path.dirname(GRID_PATH), exist_ok=True)
