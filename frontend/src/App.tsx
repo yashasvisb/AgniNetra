@@ -1,244 +1,175 @@
-// // import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
-
-// // import Home from "./pages/Home";
-// // import LiveDetection from "./pages/LiveDetection";
-
-// // function App() {
-// //   return (
-// //     <BrowserRouter>
-// //       <div className="app">
-
-// //         <nav className="navbar">
-
-// //           <Link to="/" className="logo">
-// //             <span className="logo-mark">A</span>
-// //             <span>AGNI NETRA</span>
-// //           </Link>
-
-// //           <div className="nav-links">
-// //             <Link to="/">Home</Link>
-// //             <Link to="/live">Live Detection</Link>
-// //             <a href="#about">About</a>
-// //             <a href="#methodology">Methodology</a>
-// //           </div>
-
-// //         </nav>
-
-// //         <Routes>
-
-// //           <Route path="/" element={<Home />} />
-
-// //           <Route
-// //             path="/live"
-// //             element={<LiveDetection />}
-// //           />
-
-// //         </Routes>
-
-// //       </div>
-// //     </BrowserRouter>
-// //   );
-// // }
-
-// // export default App;
-
-
-// import {
-//   BrowserRouter,
-//   Routes,
-//   Route,
-//   Link,
-//   useLocation,
-// } from "react-router-dom";
-
-// import Home from "./pages/Home";
-// import LiveDetection from "./pages/LiveDetection";
-
-// // Path to the logo in /public. Renamed from the uploaded
-// // "AgniNetra logo.jpeg" to remove the space, which otherwise
-// // has to be URL-encoded everywhere it's referenced.
-// const LOGO_SRC = "/agninetra-logo.jpg";
-
-// function NavLinks() {
-//   const location = useLocation();
-
-//   const isActive = (path: string) =>
-//     location.pathname === path;
-
-//   return (
-//     <div className="nav-links">
-//       <Link to="/" className={isActive("/") ? "active" : ""}>
-//         Home
-//       </Link>
-
-//       <Link
-//         to="/live"
-//         className={isActive("/live") ? "active" : ""}
-//       >
-//         Live Detection
-//       </Link>
-
-//       <a href="#about">About</a>
-//       <a href="#methodology">Methodology</a>
-//     </div>
-//   );
-// }
-
-// function App() {
-//   return (
-//     <BrowserRouter>
-//       <div className="app">
-//         <nav className="navbar">
-//           <Link to="/" className="logo">
-//             <span className="logo-mark">
-//               <img
-//                 src={LOGO_SRC}
-//                 alt="Agni Netra logo"
-//                 onError={(event) => {
-//                   // If the logo file hasn't been added to /public yet,
-//                   // fall back to the letter mark instead of a broken image.
-//                   const img = event.currentTarget;
-//                   img.style.display = "none";
-
-//                   const fallback =
-//                     img.parentElement?.querySelector(
-//                       ".logo-mark-fallback"
-//                     );
-
-//                   if (fallback) {
-//                     (fallback as HTMLElement).style.display = "flex";
-//                   }
-//                 }}
-//               />
-
-//               <span
-//                 className="logo-mark-fallback"
-//                 style={{ display: "none" }}
-//               >
-//                 A
-//               </span>
-//             </span>
-
-//             <span>AGNI NETRA</span>
-//           </Link>
-
-//           <NavLinks />
-//         </nav>
-
-//         <Routes>
-//           <Route path="/" element={<Home />} />
-//           <Route path="/live" element={<LiveDetection />} />
-//         </Routes>
-//       </div>
-//     </BrowserRouter>
-//   );
-// }
-
-// export default App;
-
-
-
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   BrowserRouter,
   Routes,
   Route,
   Link,
+  NavLink,
   useLocation,
 } from "react-router-dom";
 
 import Home from "./pages/Home";
 import LiveDetection from "./pages/LiveDetection";
+import Method from "./pages/Method";
 
-// Tries each of these, in order, against whatever you actually
-// named the file when you dropped it into /public. No need to
-// rename anything — spaces in the filename are fine, the browser
-// encodes them automatically.
-const LOGO_CANDIDATES = [
-  "/AgniNetra logo.jpeg",
-  "/agninetra-logo.jpeg",
-  "/agninetra-logo.jpg",
-  "/agninetra-logo.png",
-  "/logo.jpeg",
-  "/logo.png",
-];
+import { BrandMark } from "./components/BrandMark";
+import { applyFavicon } from "./lib/logo";
 
-function NavLinks() {
-  const location = useLocation();
+const PAGE_TITLES: Record<string, string> = {
+  "/": "Agni Netra — Industrial fire intelligence from satellite data",
+  "/live": "Live detection — Agni Netra",
+  "/method": "Methodology — Agni Netra",
+};
 
-  const isActive = (path: string) =>
-    location.pathname === path;
+// Scrolls to the top and sets the browser tab title on every page change
+function RouteEffects() {
+  const { pathname } = useLocation();
 
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    document.title = PAGE_TITLES[pathname] ?? "Page not found — Agni Netra";
+  }, [pathname]);
+
+  useEffect(() => {
+    applyFavicon();
+  }, []);
+
+  return null;
+}
+
+function NotFound() {
   return (
-    <div className="nav-links">
-      <Link to="/" className={isActive("/") ? "active" : ""}>
-        Home
+    <div className="wrap notfound">
+      <h1>This page does not exist</h1>
+      <p>The address may be mistyped, or the page may have moved.</p>
+      <Link className="btn btn-primary" to="/">
+        Back to home
       </Link>
-
-      <Link
-        to="/live"
-        className={isActive("/live") ? "active" : ""}
-      >
-        Live Detection
-      </Link>
-
-      
     </div>
   );
 }
 
-function Logo() {
-  const [candidateIndex, setCandidateIndex] = useState(0);
-  const [exhausted, setExhausted] = useState(false);
+function Layout() {
+  const { pathname } = useLocation();
+  const [menuOpen, setMenuOpen] = useState(false);
 
-  const src = LOGO_CANDIDATES[candidateIndex];
+  const closeMenu = () => setMenuOpen(false);
+
+  // The live map fills the whole screen, so it has no footer
+  const isConsole = pathname === "/live";
+
+  const linkClass = ({ isActive }: { isActive: boolean }) =>
+    isActive ? "active" : undefined;
 
   return (
-    <span className="logo-mark">
-      {!exhausted && (
-        <img
-          src={src}
-          alt="Agni Netra logo"
-          onError={() => {
-            // This filename didn't exist in /public — try the next
-            // likely one. Once we've tried them all, show the
-            // letter mark instead of a broken image icon.
-            if (candidateIndex < LOGO_CANDIDATES.length - 1) {
-              setCandidateIndex(candidateIndex + 1);
-            } else {
-              setExhausted(true);
-            }
-          }}
-        />
+    <div className="app">
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
+
+      <header className="site-nav">
+        <div className="nav-inner">
+          <Link to="/" className="brand" onClick={closeMenu}>
+            <BrandMark />
+            <span className="brand-word">Agni Netra</span>
+          </Link>
+
+          <button
+            type="button"
+            className="nav-toggle"
+            aria-expanded={menuOpen}
+            aria-controls="primary-nav"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
+
+          <nav
+            id="primary-nav"
+            className={`nav-links${menuOpen ? " open" : ""}`}
+            aria-label="Primary"
+          >
+            <NavLink to="/" end className={linkClass} onClick={closeMenu}>
+              Home
+            </NavLink>
+
+            <NavLink to="/live" className={linkClass} onClick={closeMenu}>
+              Live detection
+            </NavLink>
+
+            <NavLink to="/method" className={linkClass} onClick={closeMenu}>
+              Methodology
+            </NavLink>
+
+            <Link
+              to="/live"
+              className="btn btn-primary nav-cta"
+              onClick={closeMenu}
+            >
+              Open live map
+            </Link>
+          </nav>
+        </div>
+      </header>
+
+      <main id="main" className={isConsole ? "main-console" : "main"}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/live" element={<LiveDetection />} />
+          <Route path="/method" element={<Method />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </main>
+
+      {!isConsole && (
+        <footer className="site-footer">
+          <div className="wrap footer-inner">
+            <div className="footer-brand">
+              <div className="brand">
+                <BrandMark />
+                <span className="brand-word">Agni Netra</span>
+              </div>
+
+              <p>
+                Satellite thermal detections, classified and prioritised for
+                emergency response.
+              </p>
+            </div>
+
+            <div className="footer-col">
+              <h2>Explore</h2>
+              <Link to="/live">Live detection</Link>
+              <Link to="/method">Methodology</Link>
+            </div>
+
+            <div className="footer-col">
+              <h2>Data</h2>
+              <span>NASA FIRMS</span>
+              <span>Copernicus Sentinel</span>
+              <span>OpenStreetMap contributors</span>
+              <span>Mapbox</span>
+            </div>
+          </div>
+
+          <div className="wrap footer-base">
+            Built for Smart India Hackathon 2026 · Problem statement SIH26162
+          </div>
+        </footer>
       )}
 
-      {exhausted && (
-        <span className="logo-mark-fallback">A</span>
-      )}
-    </span>
+      <RouteEffects />
+    </div>
   );
 }
 
 function App() {
   return (
     <BrowserRouter>
-      <div className="app">
-        <nav className="navbar">
-          <Link to="/" className="logo">
-            <Logo />
-
-            <span>AGNI NETRA</span>
-          </Link>
-
-          <NavLinks />
-        </nav>
-
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/live" element={<LiveDetection />} />
-        </Routes>
-      </div>
+      <Layout />
     </BrowserRouter>
   );
 }

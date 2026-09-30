@@ -1,0 +1,50 @@
+{
+  "event_class_features": [
+    "land_cover_class",
+    "bright_ti4",
+    "bright_ti5",
+    "NDVI",
+    "NDWI",
+    "NDBI",
+    "CH4",
+    "CO",
+    "CH4_z",
+    "CO_z",
+    "dist_to_facility_m",
+    "facility_count_1km",
+    "facility_count_5km",
+    "persistence_count",
+    "is_persistent",
+    "month",
+    "day_of_year",
+    "daynight",
+    "confidence",
+    "scan",
+    "track"
+  ],
+  "criticality_features": [
+    "land_cover_class",
+    "bright_ti4",
+    "bright_ti5",
+    "NDVI",
+    "NDWI",
+    "NDBI",
+    "CH4",
+    "CO",
+    "CH4_z",
+    "dist_to_facility_m",
+    "facility_count_1km",
+    "facility_count_5km",
+    "month",
+    "day_of_year",
+    "daynight",
+    "confidence",
+    "scan",
+    "track"
+  ],
+  "categorical_features": [
+    "daynight",
+    "confidence",
+    "land_cover_class"
+  ]
+}

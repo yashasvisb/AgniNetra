@@ -1,11 +1,17 @@
-from fastapi import FastAPI
+# Download big data files first (no-op if they already exist)
+from data_loader import ensure_ml_files
+ensure_ml_files()
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
+import traceback
 
 from firms import get_live_fires
 from predictor import predict_event
 from live_predictor import predict_live_fire
+from station_router import find_best_station
 
 from context import get_gis_layer
 app = FastAPI(
@@ -22,14 +28,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5175",
-        "http://127.0.0.1:5175",
-        "http://localhost:5176",
-        "http://127.0.0.1:5176",
-         "https://agni-netra-psi.vercel.app",
+        "https://agni-netra-psi.vercel.app",
     ],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -42,16 +43,12 @@ app.add_middleware(
 
 @app.get("/")
 def home():
-    return {
-        "message": "Agni Netra API is running"
-    }
+    return {"message": "Agni Netra API is running"}
 
 
 @app.get("/health")
 def health():
-    return {
-        "status": "healthy"
-    }
+    return {"status": "healthy"}
 
 
 # =========================
@@ -77,9 +74,7 @@ def test_prediction():
     with open("sample_input_and_output.json", "r") as f:
         sample = json.load(f)
 
-    result = predict_event(
-        sample["sample_input_row"]
-    )
+    result = predict_event(sample["sample_input_row"])
 
     return result
 
@@ -102,6 +97,7 @@ def live_fires():
 # =========================
 # LIVE FIRE PREDICTION
 # =========================
+
 @app.post("/predict-live")
 def predict_live(fire: dict):
 
@@ -111,48 +107,27 @@ def predict_live(fire: dict):
 
         return {
             "success": True,
-
             "fire": fire,
-
-            # ML source classification
             "prediction": result["prediction"],
-
-            # Transparent contextual industrial assessment
-            "industrial_association": (
-                result["industrial_association"]
-            ),
-
-            # Gas-related atmospheric assessment
-            "gas_assessment": (
-                result["gas_assessment"]
-            ),
-
-            # Satellite + environmental + thermal evidence
-            "supporting_evidence": (
-                result["supporting_evidence"]
-            ),
-
-            # Distance between FIRMS detection
-            # and contextual grid location
-            "context_distance_m": (
-                result["context_distance_m"]
-            ),
-
-            # Fire response priority — CRITICAL/HIGH/MODERATE/LOW
-            "priority": (
-                result["priority"]
-            )
-
+            "industrial_association": result["industrial_association"],
+            "gas_assessment": result["gas_assessment"],
+            "supporting_evidence": result["supporting_evidence"],
+            "context_distance_m": result["context_distance_m"],
+            "priority": result["priority"]
         }
 
     except Exception as e:
 
+        # Prints the full error location in the terminal
+        traceback.print_exc()
+
         return {
             "success": False,
-            "error": str(e)
+            "error": f"{type(e).__name__}: {e}"
         }
 
-    # =========================
+
+# =========================
 # GIS LAYERS
 # =========================
 
@@ -175,7 +150,41 @@ def gis_layer(layer_name: str):
 
     except Exception as e:
 
+        traceback.print_exc()
+
         return {
             "success": False,
-            "error": str(e)
+            "error": f"{type(e).__name__}: {e}"
         }
+
+
+# =========================
+# EMERGENCY ROUTE
+# =========================
+
+@app.get("/route")
+def get_emergency_route(
+    fire_lat: float,
+    fire_lon: float
+):
+    """
+    Find the fastest fire-station response route
+    for a detected fire location.
+    """
+
+    try:
+
+        return find_best_station(
+            fire_lat=fire_lat,
+            fire_lon=fire_lon,
+            num_candidates=5
+        )
+
+    except Exception as e:
+
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=502,
+            detail=str(e)
+        )

@@ -1,54 +1,22 @@
-// import FireMap from "../components/FireMap";
-
-// function LiveDetection() {
-//   return (
-//     <div className="live-page">
-//       <div className="page-header">
-//         <p className="eyebrow">AGNI NETRA / LIVE SYSTEM</p>
-
-//         <h1>
-//           Live Fire <span>Detection</span>
-//         </h1>
-
-//         <p>
-//           Real-time thermal events from NASA FIRMS will appear
-//           here. Each event will be analyzed using satellite and
-//           industrial context before being classified and prioritized.
-//         </p>
-//       </div>
-
-//       <div className="map-container">
-//         <FireMap />
-//       </div>
-//     </div>
-//   );
-// }
-
-// export default LiveDetection;
-
-
-
-
 import FireMap from "../components/FireMap";
 
 function LiveDetection() {
   return (
     <div className="live-page">
-      <div className="page-header">
-        <p className="eyebrow">AGNI NETRA / LIVE SYSTEM</p>
+      <div className="live-bar">
+        <div className="live-title">
+          <h1>Live detection</h1>
 
-        <h1>
-          Live Fire <span>Detection</span>
-        </h1>
+          <span className="live-status">
+            <span className="pulse" aria-hidden="true" />
+            Live · refreshes every 5 minutes
+          </span>
+        </div>
 
-        <p>
-          Real-time thermal events from NASA FIRMS appear here as
-          they're detected. Each event is analyzed against satellite,
-          environmental, and industrial context before being
-          classified and prioritized for response.
+        <p className="live-hint">
+          Select a detection to see its classification, evidence and the
+          fastest emergency route.
         </p>
-
-        <span className="status">● LIVE — UPDATING EVERY 5 MIN</span>
       </div>
 
       <div className="map-container">

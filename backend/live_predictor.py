@@ -1,550 +1,367 @@
-import math
-import numpy as np
+import json
+import os
+import sys
+import pandas as pd
 
-from context import get_context
-from predictor import predict_event
+# ============================================================
+# PATHS
+# ============================================================
+
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+ML_TEST_DIR = os.path.join(
+    BACKEND_DIR,
+    "..",
+    "ML_TEST"
+)
+
+EVENT_MODEL_PATH = os.path.join(
+    ML_TEST_DIR,
+    "event_classifier.cbm"
+)
+
+CRITICALITY_MODEL_PATH = os.path.join(
+    ML_TEST_DIR,
+    "criticality_model.cbm"
+)
+
+SCHEMA_PATH = os.path.join(
+    ML_TEST_DIR,
+    "feature_schema.json"
+)
+
+# ============================================================
+# IMPORT FEATURE ENGINE
+# ============================================================
+
+if ML_TEST_DIR not in sys.path:
+    sys.path.insert(0, ML_TEST_DIR)
+
+from feature_engineering import FeatureEngine
+from catboost import CatBoostClassifier
 
 
 # ============================================================
-# HELPERS
+# LOAD CATBOOST MODELS
 # ============================================================
+
+print("Loading AgniNetra CatBoost models...")
+
+event_model = CatBoostClassifier()
+event_model.load_model(EVENT_MODEL_PATH)
+
+criticality_model = CatBoostClassifier()
+criticality_model.load_model(CRITICALITY_MODEL_PATH)
+
+print("CatBoost models loaded successfully!")
+
+
+# ============================================================
+# LOAD FEATURE ENGINE
+# ============================================================
+
+print("Loading AgniNetra FeatureEngine...")
+
+feature_engine = FeatureEngine(ML_TEST_DIR)
+
+print("FeatureEngine loaded successfully!")
+
+
+# ============================================================
+# LOAD FEATURE SCHEMA
+# ============================================================
+
+with open(SCHEMA_PATH, "r") as f:
+    schema = json.load(f)
+
+
+# ============================================================
+# FEATURE HELPERS
+# ============================================================
+
+def get_feature_columns(model_type):
+
+    key = (
+        "event_class_features"
+        if model_type == "event"
+        else "criticality_features"
+    )
+
+    if key in schema:
+        return schema[key]
+
+    if "features" in schema:
+        return schema["features"]
+
+    raise KeyError(
+        f"Feature schema does not contain "
+        f"'{key}' or 'features'"
+    )
+
 
 def safe_float(value, default=0.0):
+
     try:
+
         if value is None:
             return default
 
-        result = float(value)
+        value = float(value)
 
-        if np.isnan(result) or np.isinf(result):
+        if pd.isna(value):
             return default
 
-        return result
-
-    except (TypeError, ValueError):
-        return default
-
-
-def safe_int(value, default=0):
-    try:
-        if value is None:
-            return default
-
-        return int(float(value))
-
-    except (TypeError, ValueError):
-        return default
-
-
-# ============================================================
-# BUILD LIVE FEATURES
-# ============================================================
-
-def build_live_features(fire):
-
-    latitude = safe_float(
-        fire.get("latitude")
-    )
-
-    longitude = safe_float(
-        fire.get("longitude")
-    )
-
-    # --------------------------------------------------------
-    # CONTEXT
-    # --------------------------------------------------------
-
-    context, distance = get_context(
-        latitude,
-        longitude
-    )
-
-    # --------------------------------------------------------
-    # FIRMS TEMPORAL FEATURES
-    # --------------------------------------------------------
-
-    acq_time = safe_int(
-        fire.get("acq_time", 0)
-    )
-
-    acq_date = str(
-        fire.get(
-            "acq_date",
-            "2024-01-01"
-        )
-    )
-
-    try:
-        source_year = int(
-            acq_date[:4]
-        )
-    except ValueError:
-        source_year = 2024
-
-    try:
-        month = int(
-            acq_date[5:7]
-        )
-    except ValueError:
-        month = 1
-
-    try:
-        day_of_year = (
-            np.datetime64(acq_date)
-            - np.datetime64(
-                f"{source_year}-01-01"
-            )
-        ).astype(int) + 1
+        return value
 
     except Exception:
-        day_of_year = 1
 
-    # --------------------------------------------------------
-    # THERMAL FEATURES
-    # --------------------------------------------------------
+        return default
 
-    bright_ti4 = safe_float(
-        fire.get("bright_ti4", 0)
-    )
 
-    bright_ti5 = safe_float(
-        fire.get("bright_ti5", 0)
-    )
+# ============================================================
+# CATBOOST PREDICTION
+# ============================================================
 
-    frp = safe_float(
-        fire.get("frp", 0)
-    )
+def predict_event(input_data):
 
-    frp_log = math.log1p(
-        max(frp, 0)
-    )
+    required = [
+        "latitude",
+        "longitude",
+        "year",
+        "bright_ti4",
+        "bright_ti5",
+        "frp",
+        "confidence",
+        "daynight",
+        "scan",
+        "track",
+        "month",
+        "day_of_year",
+    ]
 
-    scan = safe_float(
-        fire.get("scan", 0)
-    )
+    missing = [
+        x
+        for x in required
+        if x not in input_data
+    ]
 
-    track = safe_float(
-        fire.get("track", 0)
-    )
+    if missing:
 
-    # --------------------------------------------------------
-    # SEASONAL FEATURES
-    # --------------------------------------------------------
-
-    month_sin = math.sin(
-        2 * math.pi * month / 12
-    )
-
-    month_cos = math.cos(
-        2 * math.pi * month / 12
-    )
-
-    # --------------------------------------------------------
-    # DAY / NIGHT
-    # --------------------------------------------------------
-
-    daynight = str(
-        fire.get(
-            "daynight",
-            ""
+        raise ValueError(
+            f"Missing required FIRMS fields: {missing}"
         )
-    ).upper()
 
-    daynight_binary = (
-        1
-        if daynight == "D"
-        else 0
+    # --------------------------------------------------------
+    # INPUT
+    # --------------------------------------------------------
+
+    lat = float(
+        input_data["latitude"]
+    )
+
+    lon = float(
+        input_data["longitude"]
+    )
+
+    year = int(
+        input_data["year"]
     )
 
     # --------------------------------------------------------
-    # PROJECT COORDINATES
+    # FEATURE ENGINEERING
     # --------------------------------------------------------
 
-    from pyproj import Transformer
+    row = feature_engine.build_feature_row(
 
-    transformer = Transformer.from_crs(
-        "EPSG:4326",
-        "EPSG:32644",
-        always_xy=True
-    )
+        lat=lat,
 
-    x_m, y_m = transformer.transform(
-        longitude,
-        latitude
-    )
+        lon=lon,
 
-    # --------------------------------------------------------
-    # CONTEXT YEAR
-    # --------------------------------------------------------
+        year=year,
 
-    year = 2024
+        bright_ti4=float(
+            input_data["bright_ti4"]
+        ),
 
-    # --------------------------------------------------------
-    # ATMOSPHERIC VALUES
-    # --------------------------------------------------------
+        bright_ti5=float(
+            input_data["bright_ti5"]
+        ),
 
-    ch4_value = safe_float(
-        context.get(
-            "CH4",
-            0
+        frp=float(
+            input_data["frp"]
+        ),
+
+        confidence=str(
+            input_data["confidence"]
+        ),
+
+        daynight=str(
+            input_data["daynight"]
+        ),
+
+        scan=float(
+            input_data["scan"]
+        ),
+
+        track=float(
+            input_data["track"]
+        ),
+
+        month=int(
+            input_data["month"]
+        ),
+
+        day_of_year=int(
+            input_data["day_of_year"]
+        ),
+
+        land_cover_class=input_data.get(
+            "land_cover_class",
+            None
         )
     )
 
-    ch4_anomaly = safe_float(
-        context.get(
-            "CH4_anomaly",
-            0
-        )
+    # ========================================================
+    # EVENT MODEL
+    # ========================================================
+
+    event_columns = get_feature_columns(
+        "event"
     )
 
-    # --------------------------------------------------------
-    # FEATURES
-    # --------------------------------------------------------
+    event_df = pd.DataFrame([row])
 
-    features = {
+    missing_event = [
+        c
+        for c in event_columns
+        if c not in event_df.columns
+    ]
 
-        # ----------------------------------------------------
-        # FIRMS
-        # ----------------------------------------------------
+    if missing_event:
 
-        "acq_time":
-            acq_time,
+        raise ValueError(
+            f"Missing event model features: "
+            f"{missing_event}"
+        )
 
-        "source_year":
-            source_year,
+    event_df = event_df[
+        event_columns
+    ]
 
-        "month":
-            month,
+    event_prediction = event_model.predict(
+        event_df
+    )[0][0]
 
-        "day_of_year":
-            int(day_of_year),
+    event_probabilities_raw = (
+        event_model.predict_proba(
+            event_df
+        )[0]
+    )
 
-        "latitude":
-            latitude,
+    event_classes = event_model.classes_
 
-        "longitude":
-            longitude,
+    event_probabilities = {
 
-        "bright_ti4":
-            bright_ti4,
+        str(event_classes[i]):
+        float(
+            event_probabilities_raw[i]
+        )
 
-        "bright_ti5":
-            bright_ti5,
-
-        "frp":
-            frp,
-
-        "frp_log":
-            frp_log,
-
-        "scan":
-            scan,
-
-        "track":
-            track,
-
-        "month_sin":
-            month_sin,
-
-        "month_cos":
-            month_cos,
-
-        "daynight_binary":
-            daynight_binary,
-
-        "x_m":
-            x_m,
-
-        "y_m":
-            y_m,
-
-        # ----------------------------------------------------
-        # INDUSTRIAL CONTEXT
-        # ----------------------------------------------------
-
-        "dist_to_industry_m":
-            safe_float(
-                context.get(
-                    "dist_to_industry_m",
-                    999999
-                )
-            ),
-
-        "nearest_industry_high_heat":
-            safe_float(
-                context.get(
-                    "nearest_industry_high_heat",
-                    0
-                )
-            ),
-
-        "industry_count_1km":
-            safe_float(
-                context.get(
-                    "industry_count_1km",
-                    0
-                )
-            ),
-
-        "industry_count_5km":
-            safe_float(
-                context.get(
-                    "industry_count_5km",
-                    0
-                )
-            ),
-
-        # ----------------------------------------------------
-        # OSM
-        # ----------------------------------------------------
-
-        "dist_to_osm_facility_m":
-            safe_float(
-                context.get(
-                    "dist_to_osm_facility_m",
-                    999999
-                )
-            ),
-
-        "osm_count_1km":
-            safe_float(
-                context.get(
-                    "osm_count_1km",
-                    0
-                )
-            ),
-
-        "osm_count_5km":
-            safe_float(
-                context.get(
-                    "osm_count_5km",
-                    0
-                )
-            ),
-
-        # ----------------------------------------------------
-        # SENTINEL-2
-        # ----------------------------------------------------
-
-        "NDVI":
-            safe_float(
-                context.get(
-                    "NDVI",
-                    0
-                )
-            ),
-
-        "NDWI":
-            safe_float(
-                context.get(
-                    "NDWI",
-                    0
-                )
-            ),
-
-        "NDBI":
-            safe_float(
-                context.get(
-                    "NDBI",
-                    0
-                )
-            ),
-
-        # ----------------------------------------------------
-        # DYNAMIC WORLD
-        # ----------------------------------------------------
-
-        "grid_DW_bare":
-            safe_float(
-                context.get(
-                    f"DW_bare_{year}",
-                    0
-                )
-            ),
-
-        "grid_DW_built":
-            safe_float(
-                context.get(
-                    f"DW_built_{year}",
-                    0
-                )
-            ),
-
-        "grid_DW_crops":
-            safe_float(
-                context.get(
-                    f"DW_crops_{year}",
-                    0
-                )
-            ),
-
-        "grid_DW_flooded_vegetation":
-            safe_float(
-                context.get(
-                    f"DW_flooded_vegetation_{year}",
-                    0
-                )
-            ),
-
-        "grid_DW_grass":
-            safe_float(
-                context.get(
-                    f"DW_grass_{year}",
-                    0
-                )
-            ),
-
-        "grid_DW_shrub":
-            safe_float(
-                context.get(
-                    f"DW_shrub_{year}",
-                    0
-                )
-            ),
-
-        "grid_DW_trees":
-            safe_float(
-                context.get(
-                    f"DW_trees_{year}",
-                    0
-                )
-            ),
-
-        "grid_DW_water":
-            safe_float(
-                context.get(
-                    f"DW_water_{year}",
-                    0
-                )
-            ),
-
-        # ----------------------------------------------------
-        # ATMOSPHERIC INDICATORS
-        # ----------------------------------------------------
-
-        "CO":
-            safe_float(
-                context.get(
-                    "CO",
-                    0
-                )
-            ),
-
-        "NO2":
-            safe_float(
-                context.get(
-                    "NO2",
-                    0
-                )
-            ),
-
-        "SO2":
-            safe_float(
-                context.get(
-                    "SO2",
-                    0
-                )
-            ),
-
-        "CH4":
-            ch4_value,
-
-        "ch4_available":
-            0
-            if np.isnan(
-                safe_float(
-                    context.get(
-                        "CH4",
-                        0
-                    )
-                )
-            )
-            else 1,
-
-        # ----------------------------------------------------
-        # HISTORICAL CONTEXT
-        # ----------------------------------------------------
-
-        "persistence_count":
-            safe_float(
-                context.get(
-                    "historical_fire_count",
-                    0
-                )
-            ),
-
-        "CO_anomaly":
-            safe_float(
-                context.get(
-                    "CO_anomaly",
-                    0
-                )
-            ),
-
-        "NO2_anomaly":
-            safe_float(
-                context.get(
-                    "NO2_anomaly",
-                    0
-                )
-            ),
-
-        "SO2_anomaly":
-            safe_float(
-                context.get(
-                    "SO2_anomaly",
-                    0
-                )
-            ),
-
-        "CH4_anomaly":
-            ch4_anomaly,
-
-        "industrial_anomaly_score":
-            safe_float(
-                context.get(
-                    "background_industrial_risk",
-                    0
-                )
-            ),
-
-        # ----------------------------------------------------
-        # CATEGORICAL FEATURES
-        # ----------------------------------------------------
-
-        "confidence":
-            str(
-                fire.get(
-                    "confidence",
-                    "n"
-                )
-            ),
-
-        "nearest_industry_sector":
-            "Unknown",
-
-        "nearest_osm_feature_type":
-            "Unknown",
-
-        "grid_DW_dominant":
-            str(
-                context.get(
-                    f"DW_dominant_{year}",
-                    "Unknown"
-                )
-            ),
+        for i in range(
+            len(event_classes)
+        )
     }
 
-    return features, distance
+    event_confidence = float(
+        max(event_probabilities_raw)
+    )
+
+    # ========================================================
+    # CRITICALITY MODEL
+    # ========================================================
+
+    criticality_columns = (
+        get_feature_columns(
+            "criticality"
+        )
+    )
+
+    criticality_df = pd.DataFrame([row])
+
+    missing_criticality = [
+
+        c
+
+        for c in criticality_columns
+
+        if c not in criticality_df.columns
+    ]
+
+    if missing_criticality:
+
+        raise ValueError(
+            "Missing criticality model features: "
+            f"{missing_criticality}"
+        )
+
+    criticality_df = criticality_df[
+        criticality_columns
+    ]
+
+    criticality_prediction = (
+        criticality_model.predict(
+            criticality_df
+        )[0][0]
+    )
+
+    criticality_probabilities_raw = (
+        criticality_model.predict_proba(
+            criticality_df
+        )[0]
+    )
+
+    criticality_classes = (
+        criticality_model.classes_
+    )
+
+    criticality_probabilities = {
+
+        str(criticality_classes[i]):
+        float(
+            criticality_probabilities_raw[i]
+        )
+
+        for i in range(
+            len(criticality_classes)
+        )
+    }
+
+    return {
+
+        "predicted_class":
+            str(event_prediction),
+
+        "confidence":
+            event_confidence,
+
+        "probabilities":
+            event_probabilities,
+
+        "criticality":
+            str(criticality_prediction),
+
+        "criticality_probabilities":
+            criticality_probabilities,
+
+        "features":
+            row,
+    }
 
 
 # ============================================================
 # INDUSTRIAL ASSOCIATION
 # ============================================================
 
-def assess_industrial_association(
-    context
-):
+def assess_industrial_association(context):
 
     distance_to_industry = safe_float(
         context.get(
@@ -586,7 +403,7 @@ def assess_industrial_association(
     strong_signals = 0
 
     # --------------------------------------------------------
-    # INDUSTRIAL PROXIMITY
+    # PROXIMITY
     # --------------------------------------------------------
 
     if distance_to_industry <= 1000:
@@ -626,7 +443,7 @@ def assess_industrial_association(
         )
 
     # --------------------------------------------------------
-    # HIGH HEAT FACILITY
+    # HIGH HEAT
     # --------------------------------------------------------
 
     if high_heat >= 1:
@@ -638,7 +455,7 @@ def assess_industrial_association(
         strong_signals += 1
 
     # --------------------------------------------------------
-    # BACKGROUND INDUSTRIAL RISK
+    # BACKGROUND RISK
     # --------------------------------------------------------
 
     if background_risk >= 0.25:
@@ -656,7 +473,7 @@ def assess_industrial_association(
         )
 
     # --------------------------------------------------------
-    # FINAL ASSOCIATION
+    # FINAL
     # --------------------------------------------------------
 
     if strong_signals >= 2:
@@ -681,6 +498,7 @@ def assess_industrial_association(
         )
 
     return {
+
         "level":
             association,
 
@@ -744,16 +562,15 @@ def build_source_evidence(
     # LAND COVER
     # --------------------------------------------------------
 
-    year = 2024
-
     dominant = str(
         context.get(
-            f"DW_dominant_{year}",
+            "DW_dominant_2024",
             "Unknown"
         )
     )
 
     land_cover_labels = {
+
         "0": "Water",
         "1": "Trees",
         "2": "Grass",
@@ -886,12 +703,6 @@ def assess_gas_related_event(
     fire,
     context
 ):
-    """
-    Transparent contextual assessment.
-
-    This is NOT a gas-leak detector
-    and does not confirm a leak.
-    """
 
     ch4 = safe_float(
         context.get(
@@ -929,6 +740,7 @@ def assess_gas_related_event(
     )
 
     thresholds = {
+
         "CO_moderate": 1.36,
         "CO_strong": 1.69,
 
@@ -1035,7 +847,7 @@ def assess_gas_related_event(
         gas_score += 1
 
     # --------------------------------------------------------
-    # THERMAL EVENT
+    # THERMAL
     # --------------------------------------------------------
 
     if frp >= 5:
@@ -1048,7 +860,7 @@ def assess_gas_related_event(
         gas_score += 1
 
     # --------------------------------------------------------
-    # CLASSIFICATION
+    # ASSESSMENT
     # --------------------------------------------------------
 
     if gas_score >= 4:
@@ -1074,6 +886,7 @@ def assess_gas_related_event(
         )
 
     return {
+
         "assessment":
             assessment,
 
@@ -1096,11 +909,6 @@ def assess_fire_priority(
     fire,
     context
 ):
-    """
-    Transparent decision-support prioritization.
-
-    Score is internal and is NOT a probability.
-    """
 
     score = 0
 
@@ -1148,9 +956,9 @@ def assess_fire_priority(
         )
     )
 
-    # ========================================================
-    # 1. MODEL CLASSIFICATION
-    # ========================================================
+    # --------------------------------------------------------
+    # CLASSIFICATION
+    # --------------------------------------------------------
 
     if "industrial" in predicted_class:
 
@@ -1180,9 +988,9 @@ def assess_fire_priority(
             "AI classification indicates a non-industrial thermal event"
         )
 
-    # ========================================================
-    # 2. MODEL CONFIDENCE
-    # ========================================================
+    # --------------------------------------------------------
+    # CONFIDENCE
+    # --------------------------------------------------------
 
     if confidence >= 0.80:
 
@@ -1200,9 +1008,9 @@ def assess_fire_priority(
             "Moderate model confidence"
         )
 
-    # ========================================================
-    # 3. INDUSTRIAL CONTEXT
-    # ========================================================
+    # --------------------------------------------------------
+    # INDUSTRIAL CONTEXT
+    # --------------------------------------------------------
 
     if industrial_level == "high":
 
@@ -1220,13 +1028,12 @@ def assess_fire_priority(
             "Moderate industrial context near the detection"
         )
 
-    # ========================================================
-    # 4. GAS / ATMOSPHERIC
-    # ========================================================
+    # --------------------------------------------------------
+    # GAS
+    # --------------------------------------------------------
 
-    if (
-        gas_assessment_text
-        == "POSSIBLE GAS-RELATED EVENT"
+    if gas_assessment_text == (
+        "POSSIBLE GAS-RELATED EVENT"
     ):
 
         score += 3
@@ -1235,10 +1042,7 @@ def assess_fire_priority(
             "Multiple atmospheric indicators are elevated"
         )
 
-    elif (
-        gas_assessment_text
-        == "INCONCLUSIVE"
-    ):
+    elif gas_assessment_text == "INCONCLUSIVE":
 
         score += 1
 
@@ -1246,9 +1050,9 @@ def assess_fire_priority(
             "Some atmospheric indicators are elevated"
         )
 
-    # ========================================================
-    # 5. THERMAL INTENSITY
-    # ========================================================
+    # --------------------------------------------------------
+    # FRP
+    # --------------------------------------------------------
 
     if frp >= 50:
 
@@ -1274,9 +1078,9 @@ def assess_fire_priority(
             f"Elevated thermal intensity ({frp:.1f} MW)"
         )
 
-    # ========================================================
-    # 6. HISTORICAL PERSISTENCE
-    # ========================================================
+    # --------------------------------------------------------
+    # PERSISTENCE
+    # --------------------------------------------------------
 
     if persistence >= 100:
 
@@ -1294,9 +1098,9 @@ def assess_fire_priority(
             "Repeated historical thermal detections nearby"
         )
 
-    # ========================================================
+    # --------------------------------------------------------
     # FINAL PRIORITY
-    # ========================================================
+    # --------------------------------------------------------
 
     if score >= 10:
 
@@ -1315,6 +1119,7 @@ def assess_fire_priority(
         priority = "LOW"
 
     return {
+
         "level":
             priority,
 
@@ -1327,25 +1132,17 @@ def assess_fire_priority(
 
 
 # ============================================================
-# MAIN LIVE PREDICTION
+# LIVE FIRE PREDICTION
 # ============================================================
 
 def predict_live_fire(fire):
 
     # ========================================================
-    # BUILD FEATURES
-    # ========================================================
-
-    features, distance = (
-        build_live_features(fire)
-    )
-
-    # ========================================================
-    # ML SOURCE CLASSIFICATION
+    # ML PREDICTION
     # ========================================================
 
     prediction = predict_event(
-        features
+        fire
     )
 
     # ========================================================
@@ -1353,14 +1150,20 @@ def predict_live_fire(fire):
     # ========================================================
 
     latitude = safe_float(
-        fire.get("latitude")
+        fire.get(
+            "latitude"
+        )
     )
 
     longitude = safe_float(
-        fire.get("longitude")
+        fire.get(
+            "longitude"
+        )
     )
 
-    context, _ = get_context(
+    from context import get_context
+
+    context, distance = get_context(
         latitude,
         longitude
     )
@@ -1376,7 +1179,7 @@ def predict_live_fire(fire):
     )
 
     # ========================================================
-    # ENVIRONMENTAL / GIS EVIDENCE
+    # SOURCE EVIDENCE
     # ========================================================
 
     supporting_evidence = (
@@ -1398,56 +1201,103 @@ def predict_live_fire(fire):
     )
 
     # ========================================================
-    # FILTER PROBABILITIES
+    # PROBABILITY FILTER
     # ========================================================
 
     filtered_probabilities = {
+
         label: probability
+
         for label, probability
         in prediction[
             "probabilities"
         ].items()
+
         if probability >= 0.001
     }
 
     # ========================================================
-    # DECISION SUPPORT
+    # PRIORITY
     # ========================================================
 
     priority = assess_fire_priority(
+
         prediction=prediction,
+
         industrial_association=
             industrial_association,
+
         gas_assessment=
             gas_assessment,
+
         fire=fire,
+
         context=context,
     )
 
     # ========================================================
-    # RESPONSE
+    # FINAL RESPONSE
     # ========================================================
 
     return {
-    "analyzed": True,
 
-    "prediction": {
-        "predicted_class": prediction["predicted_class"],
-        "confidence": prediction["confidence"],
-        "probabilities": filtered_probabilities,
-    },
+        "analyzed":
+            True,
 
-    "industrial_association": industrial_association,
+        "prediction": {
 
-    "gas_assessment": gas_assessment,
+            "predicted_class":
+                prediction[
+                    "predicted_class"
+                ],
 
-    "supporting_evidence": supporting_evidence,
+            "confidence":
+                prediction[
+                    "confidence"
+                ],
 
-    "context_distance_m": distance,
+            "probabilities":
+                filtered_probabilities,
 
-    "priority": {
-        "level": priority["level"],
-        "reasons": priority["reasons"],
-        "score": priority["score"],
-    },
-}
+            "criticality":
+                prediction[
+                    "criticality"
+                ],
+
+            "criticality_probabilities":
+                prediction[
+                    "criticality_probabilities"
+                ],
+        },
+
+        "industrial_association":
+            industrial_association,
+
+        "gas_assessment":
+            gas_assessment,
+
+        "supporting_evidence":
+            supporting_evidence,
+
+        "context_distance_m":
+            distance,
+
+        "priority":
+            {
+
+                "level":
+                    priority[
+                        "level"
+                    ],
+
+                "reasons":
+                    priority[
+                        "reasons"
+                    ],
+
+                "score":
+                    priority[
+                        "score"
+                    ],
+            },
+    }

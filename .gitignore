@@ -14,4 +14,22 @@ backend/.env
 frontend/.env
 
 # OS junk
+.DS_StoreML_TEST/LandCover_2022_500m.csv
+ML_TEST/LandCover_2023_500m.csv
+ML_TEST/LandCover_2024_500m.csv
+ML_TEST/Odisha_S2_Indices_AllYears_wide.csv
 .DS_Store
+**/.DS_Store
+venv/
+.venv/
+backend/venv/
+__pycache__/
+*.pyc
+.env
+backend/.env
+node_modules/
+ML_TEST/LandCover_2022_500m.csv
+ML_TEST/LandCover_2023_500m.csv
+ML_TEST/LandCover_2024_500m.csv
+ML_TEST/Odisha_S2_Indices_AllYears_wide.csv
+backend/data/Odisha_Wide_Contextual_Risk_Grid_with_NDVI_NDWI_NDBI.csv
