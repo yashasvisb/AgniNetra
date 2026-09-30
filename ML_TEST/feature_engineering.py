@@ -1,17 +1,14 @@
 """
-AgniNetra feature engineering — reproduces every non-FIRMS feature used to
-train event_classifier.cbm and criticality_model.cbm, for any new lat/lon/date.
+AgniNetra feature engineering (memory-lean version).
 
-Reference data required (bundled alongside this file):
-  - Odisha_S2_Indices_AllYears_wide.csv
-  - AgniNetra_CH4_2022_2024_1km.csv
-  - AgniNetra_CO_2022_2024_1km.csv
-  - AgniNetra_NO2_2022_2024_1km.csv
-  - AgniNetra_SO2_2022_2024_1km.csv
-  - OSM_and_Industries_final_data.csv
-  - MASTER_v2_TRAIN_temporal_clean.csv
-  - LandCover_2022_500m.csv, LandCover_2023_500m.csv, LandCover_2024_500m.csv
+Same features as before, but:
+  - only the needed CSV columns are loaded
+  - big grids are stored as compact arrays
+  - lookups are precomputed once at startup
 """
+
+import gc
+from collections import Counter
 
 import numpy as np
 import pandas as pd
@@ -28,80 +25,126 @@ LC_FILES = {2022: 'LandCover_2022_500m.csv',
 LC_MAX_DIST_M = 1000
 
 TRAIN_YEARS = (2022, 2023, 2024)
+GASES = ('CH4', 'CO', 'NO2', 'SO2')
+GAS_FILES = {
+    'CH4': 'AgniNetra_CH4_2022_2024_1km.csv',
+    'CO': 'AgniNetra_CO_2022_2024_1km.csv',
+    'NO2': 'AgniNetra_NO2_2022_2024_1km.csv',
+    'SO2': 'AgniNetra_SO2_2022_2024_1km.csv',
+}
+S2_INDICES = ('NDVI', 'NDWI', 'NDBI')
+CLUSTER_DEG = 0.01
+PERSISTENT_THRESHOLD = 6
 
 
-def _to_rad(df, lat='latitude', lon='longitude'):
-    return np.radians(df[[lat, lon]].values)
+def _rad(lat, lon):
+    return np.radians(np.column_stack([lat, lon]).astype(np.float64))
 
 
 class FeatureEngine:
     def __init__(self, base_path):
         self.base = base_path
 
-        # Sentinel-2 indices grid (all years, wide format)
-        self.s2 = pd.read_csv(f"{base_path}/Odisha_S2_Indices_AllYears_wide.csv")
-        self.s2_tree = BallTree(_to_rad(self.s2), metric='haversine')
+        # ---------- Sentinel-2 indices ----------
+        s2_value_cols = [f'{i}_{y}' for i in S2_INDICES for y in TRAIN_YEARS]
+        s2_wanted = set(['latitude', 'longitude'] + s2_value_cols)
+        s2 = pd.read_csv(
+            f"{base_path}/Odisha_S2_Indices_AllYears_wide.csv",
+            usecols=lambda c: c in s2_wanted,
+            dtype={c: 'float32' for c in s2_value_cols},
+        )
+        self.s2_tree = BallTree(_rad(s2['latitude'].values, s2['longitude'].values),
+                                metric='haversine')
+        self.s2_vals = {c: s2[c].to_numpy() for c in s2_value_cols if c in s2.columns}
+        del s2
+        gc.collect()
 
-        # Gas grids: separate tree per gas
-        self.gas_grids = {}
+        # ---------- Gases ----------
         self.gas_trees = {}
+        self.gas_year_vals = {}
+        self.gas_baseline = {}
         self.gas_stats = {}
-        for gas, fname in [('CH4', 'AgniNetra_CH4_2022_2024_1km.csv'),
-                           ('CO', 'AgniNetra_CO_2022_2024_1km.csv'),
-                           ('NO2', 'AgniNetra_NO2_2022_2024_1km.csv'),
-                           ('SO2', 'AgniNetra_SO2_2022_2024_1km.csv')]:
-            g = pd.read_csv(f"{base_path}/{fname}")
-            self.gas_grids[gas] = g
-            self.gas_trees[gas] = BallTree(_to_rad(g), metric='haversine')
+        self.gas_pooled = {}
+        for gas, fname in GAS_FILES.items():
+            cols = [f'{gas}_{y}' for y in TRAIN_YEARS]
+            wanted = set(['latitude', 'longitude'] + cols)
+            g = pd.read_csv(f"{base_path}/{fname}", usecols=lambda c: c in wanted)
+            self.gas_trees[gas] = BallTree(_rad(g['latitude'].values, g['longitude'].values),
+                                           metric='haversine')
+            self.gas_year_vals[gas] = {y: g[f'{gas}_{y}'].to_numpy() for y in TRAIN_YEARS}
+            self.gas_baseline[gas] = g[cols].mean(axis=1).to_numpy()
             self.gas_stats[gas] = {y: (g[f'{gas}_{y}'].mean(), g[f'{gas}_{y}'].std())
                                    for y in TRAIN_YEARS}
+            pooled = g[cols].to_numpy()
+            self.gas_pooled[gas] = (float(np.nanmean(pooled)), float(np.nanstd(pooled)))
+            del g, pooled
+        gc.collect()
 
-        # Industrial facilities
-        self.facilities = pd.read_csv(f"{base_path}/OSM_and_Industries_final_data.csv")
+        # ---------- Industrial facilities ----------
+        fac_wanted = {'latitude', 'longitude', 'year'}
+        self.facilities = pd.read_csv(
+            f"{base_path}/OSM_and_Industries_final_data.csv",
+            usecols=lambda c: c in fac_wanted,
+        )
+        self._fac_trees = {}  # cache: year -> BallTree
 
-        # Historical FIRMS detections, for persistence lookup
-        self.history = pd.read_csv(f"{base_path}/MASTER_v2_TRAIN_temporal_clean.csv")
+        # ---------- Historical FIRMS detections (persistence) ----------
+        h = pd.read_csv(
+            f"{base_path}/MASTER_v2_TRAIN_temporal_clean.csv",
+            usecols=['latitude', 'longitude'],
+        ).dropna()
+        ilat = np.rint(h['latitude'].to_numpy() / CLUSTER_DEG).astype(np.int64)
+        ilon = np.rint(h['longitude'].to_numpy() / CLUSTER_DEG).astype(np.int64)
+        self.persistence_counts = Counter(zip(ilat.tolist(), ilon.tolist()))
+        del h, ilat, ilon
+        gc.collect()
 
-        # Dynamic World land-cover grids, one tree per year
+        # ---------- Land cover (store only the winning class) ----------
         self.lc_trees = {}
-        self.lc_probs = {}
+        self.lc_class = {}
         for y, fname in LC_FILES.items():
-            cols = ['latitude', 'longitude'] + [f'DW_{n}_{y}' for n in LC_NAMES]
-            g = pd.read_csv(f"{base_path}/{fname}", usecols=cols)
-            self.lc_trees[y] = BallTree(_to_rad(g), metric='haversine')
-            self.lc_probs[y] = g[[f'DW_{n}_{y}' for n in LC_NAMES]].values
+            prob_cols = [f'DW_{n}_{y}' for n in LC_NAMES]
+            g = pd.read_csv(f"{base_path}/{fname}",
+                            usecols=['latitude', 'longitude'] + prob_cols)
+            self.lc_trees[y] = BallTree(_rad(g['latitude'].values, g['longitude'].values),
+                                        metric='haversine')
+            self.lc_class[y] = np.argmax(g[prob_cols].to_numpy(), axis=1).astype(np.int8)
+            del g
+            gc.collect()
+
+    # ---------------- Coverage check (used by firms.py) ----------------
+    def inside_coverage(self, lats, lons):
+        """True for points that lie on the Odisha land-cover grid."""
+        dist, _ = self.lc_trees[2024].query(_rad(lats, lons), k=1)
+        return (dist[:, 0] * EARTH_R) <= LC_MAX_DIST_M
 
     # ---------------- Sentinel-2 ----------------
     def get_sentinel_indices(self, lat, lon, year):
-        pt = np.radians([[lat, lon]])
-        dist, idx = self.s2_tree.query(pt, k=1)
-        row = self.s2.iloc[idx[0][0]]
+        dist, idx = self.s2_tree.query(np.radians([[lat, lon]]), k=1)
+        i = idx[0][0]
 
-        # Use the closest available year (2026 -> 2024)
         available_years = [
             y for y in TRAIN_YEARS
-            if f'NDVI_{y}' in row.index
-            and f'NDWI_{y}' in row.index
-            and f'NDBI_{y}' in row.index
+            if all(f'{n}_{y}' in self.s2_vals for n in S2_INDICES)
         ]
-
         if not available_years:
             raise ValueError("No valid Sentinel-2 index years available")
 
+        # Closest available year (2026 -> 2024)
         s2_year = min(available_years, key=lambda y: abs(y - int(year)))
 
         return {
-            'NDVI': row[f'NDVI_{s2_year}'],
-            'NDWI': row[f'NDWI_{s2_year}'],
-            'NDBI': row[f'NDBI_{s2_year}'],
-            's2_dist_m': dist[0][0] * EARTH_R
+            'NDVI': float(self.s2_vals[f'NDVI_{s2_year}'][i]),
+            'NDWI': float(self.s2_vals[f'NDWI_{s2_year}'][i]),
+            'NDBI': float(self.s2_vals[f'NDBI_{s2_year}'][i]),
+            's2_dist_m': float(dist[0][0] * EARTH_R),
         }
 
     # ---------------- Gases ----------------
     def get_gas_values(self, lat, lon, year, live_values=None):
         """
         2022-2024: historical value (same as training).
-        Any other year (e.g. 2026): the 3-year baseline of that grid cell is used,
+        Other years (e.g. 2026): the 3-year baseline of that grid cell is used,
         or a live reading if live_values={'CH4':..,'CO':..,'NO2':..,'SO2':..} is given.
         """
         pt = np.radians([[lat, lon]])
@@ -109,26 +152,24 @@ class FeatureEngine:
         is_training_year = year in TRAIN_YEARS
         out = {}
 
-        for gas in ('CH4', 'CO', 'NO2', 'SO2'):
-            dist, idx = self.gas_trees[gas].query(pt, k=1)
-            cell = self.gas_grids[gas].iloc[idx[0][0]]
-            cols = [f'{gas}_{y}' for y in TRAIN_YEARS]
-            baseline = float(cell[cols].mean())
+        for gas in GASES:
+            _, idx = self.gas_trees[gas].query(pt, k=1)
+            i = idx[0][0]
+            baseline = float(self.gas_baseline[gas][i])
 
             has_live = bool(live_values) and gas in live_values
 
             if has_live:
                 val = float(live_values[gas])
             elif is_training_year:
-                val = float(cell[f'{gas}_{year}'])
+                val = float(self.gas_year_vals[gas][year][i])
             else:
                 val = baseline
 
             if is_training_year and not has_live:
                 mu, sd = self.gas_stats[gas][year]
             else:
-                pooled = self.gas_grids[gas][cols].values.ravel()
-                mu, sd = np.nanmean(pooled), np.nanstd(pooled)
+                mu, sd = self.gas_pooled[gas]
 
             out[gas] = val
             out[f'{gas}_z'] = (val - mu) / sd if sd else 0.0
@@ -137,43 +178,49 @@ class FeatureEngine:
         return out
 
     # ---------------- Facility proximity ----------------
+    def _facility_tree(self, year):
+        year = int(year)
+        if year not in self._fac_trees:
+            cum = self.facilities[self.facilities['year'] <= year]
+            if len(cum) == 0:
+                self._fac_trees[year] = None
+            else:
+                self._fac_trees[year] = BallTree(
+                    _rad(cum['latitude'].values, cum['longitude'].values),
+                    metric='haversine')
+        return self._fac_trees[year]
+
     def get_facility_features(self, lat, lon, year):
-        cum_fac = self.facilities[self.facilities['year'] <= year]
-        if len(cum_fac) == 0:
+        tree = self._facility_tree(year)
+        if tree is None:
             return {'dist_to_facility_m': np.nan, 'facility_count_1km': 0, 'facility_count_5km': 0}
-        tree = BallTree(_to_rad(cum_fac), metric='haversine')
         pt = np.radians([[lat, lon]])
-        dist, idx = tree.query(pt, k=1)
+        dist, _ = tree.query(pt, k=1)
         c1 = tree.query_radius(pt, r=1000 / EARTH_R, count_only=True)[0]
         c5 = tree.query_radius(pt, r=5000 / EARTH_R, count_only=True)[0]
         return {
-            'dist_to_facility_m': dist[0][0] * EARTH_R,
+            'dist_to_facility_m': float(dist[0][0] * EARTH_R),
             'facility_count_1km': int(c1),
-            'facility_count_5km': int(c5)
+            'facility_count_5km': int(c5),
         }
 
     # ---------------- Persistence ----------------
-    def get_persistence(self, lat, lon, cluster_size_deg=0.01, persistent_threshold=6):
-        clat = round(lat / cluster_size_deg) * cluster_size_deg
-        clon = round(lon / cluster_size_deg) * cluster_size_deg
-        hist_clat = (self.history['latitude'] / cluster_size_deg).round() * cluster_size_deg
-        hist_clon = (self.history['longitude'] / cluster_size_deg).round() * cluster_size_deg
-        count = int(((hist_clat == clat) & (hist_clon == clon)).sum())
+    def get_persistence(self, lat, lon):
+        key = (int(round(lat / CLUSTER_DEG)), int(round(lon / CLUSTER_DEG)))
+        count = int(self.persistence_counts.get(key, 0))
         return {
             'persistence_count': count,
-            'is_persistent': int(count >= persistent_threshold)
+            'is_persistent': int(count >= PERSISTENT_THRESHOLD),
         }
 
     # ---------------- Land cover ----------------
-        # ---------------- Land cover ----------------
     def get_land_cover(self, lat, lon, year):
         y = min(LC_FILES, key=lambda k: abs(k - int(year)))
         dist, idx = self.lc_trees[y].query(np.radians([[lat, lon]]), k=1)
         dist_m = float(dist[0][0] * EARTH_R)
 
-        # Always use the nearest grid cell, even for points outside Odisha.
-        # CatBoost cannot accept None in a categorical column.
-        cls = int(np.argmax(self.lc_probs[y][idx[0][0]]))
+        # Always use the nearest cell (CatBoost cannot take None here)
+        cls = int(self.lc_class[y][idx[0][0]])
 
         return {
             'land_cover_class': cls,
@@ -183,7 +230,6 @@ class FeatureEngine:
         }
 
     # ---------------- Full feature row ----------------
-        # ---------------- Full feature row ----------------
     def build_feature_row(self, lat, lon, year, bright_ti4, bright_ti5, frp,
                           confidence, daynight, scan, track, month, day_of_year,
                           land_cover_class=None, live_gas_values=None):
@@ -192,7 +238,7 @@ class FeatureEngine:
 
         # Safety net: categorical columns must never be None
         if land_cover_class is None:
-            land_cover_class = 4  # Crops, the most common class
+            land_cover_class = 4
         if confidence is None:
             confidence = 'n'
         if daynight is None:

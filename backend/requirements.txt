@@ -33,3 +33,7 @@ xgboost==3.4.1
 gdown
 gunicorn
 catboost
+tifffile
+imagecodecs
+requests
+

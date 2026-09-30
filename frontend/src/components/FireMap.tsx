@@ -4,10 +4,8 @@ import {
   useRef,
   useState,
   type Dispatch,
-  type ReactNode,
   type SetStateAction,
 } from "react";
-
 import {
   MapContainer,
   TileLayer,
@@ -16,9 +14,7 @@ import {
   Polyline,
   useMap,
 } from "react-leaflet";
-
 import "leaflet/dist/leaflet.css";
-
 import {
   getLiveFires,
   predictLiveFire,
@@ -154,13 +150,6 @@ const PRIORITY_COLORS: Record<PriorityLevel | "NOT_ANALYZED", string> = {
   NOT_ANALYZED: "#f59e0b",
 };
 
-const PRIORITY_BACKGROUNDS: Record<PriorityLevel, string> = {
-  CRITICAL: "#fff0f0",
-  HIGH: "#fff7ed",
-  MODERATE: "#fffbea",
-  LOW: "#f2faf3",
-};
-
 const GIS_LAYER_NAMES: LayerName[] = [
   "landCover",
   "ndvi",
@@ -181,6 +170,93 @@ const ANOMALY_LEGEND_ITEMS = [
   { label: "2 – 4×", color: "#f28e2b" },
   { label: "> 4×", color: "#d73027" },
 ];
+
+// VIIRS single-letter codes used by NASA FIRMS
+const SATELLITE_LABELS: Record<string, string> = {
+  N: "Suomi NPP",
+  "1": "NOAA-20",
+  "2": "NOAA-21",
+};
+
+const CONFIDENCE_LABELS: Record<string, string> = {
+  l: "Low",
+  n: "Nominal",
+  h: "High",
+};
+
+// ============================================================
+// POPUP STYLES (injected once, scoped to .agni-popup)
+// ============================================================
+
+const POPUP_CSS = `
+.agni-popup .leaflet-popup-content-wrapper {
+  background: #0d0f12;
+  color: #e8eaed;
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 16px;
+  box-shadow: 0 20px 48px rgba(0,0,0,0.6);
+  padding: 0;
+}
+.agni-popup .leaflet-popup-content { margin: 0; font-family: ${FONT}; }
+.agni-popup .leaflet-popup-tip { background: #0d0f12; }
+.agni-popup a.leaflet-popup-close-button { color: #8b9098; top: 12px; right: 12px; }
+.agni-popup a.leaflet-popup-close-button:hover { color: #fff; }
+
+.an-scroll { max-height: 470px; overflow-y: auto; overflow-x: hidden; padding: 22px 22px 18px; box-sizing: border-box; }
+.an-scroll::-webkit-scrollbar { width: 6px; }
+.an-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+
+.an-brand { font-size: 10px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: ${BRAND_ACCENT}; }
+.an-title { font-size: 20px; font-weight: 700; margin: 6px 0 4px; color: #fff; }
+.an-sub { font-size: 12px; color: #8b9098; line-height: 1.5; }
+
+.an-tabs { display: flex; gap: 4px; margin: 18px 0 20px; padding: 4px; background: rgba(255,255,255,0.05); border-radius: 11px; }
+.an-tab { flex: 1; padding: 8px 0; border: none; border-radius: 8px; background: transparent; color: #8b9098; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; }
+.an-tab:hover { color: #fff; }
+.an-tab.active { background: rgba(255,255,255,0.11); color: #fff; }
+
+.an-hero { padding: 16px 18px; border-radius: 12px; }
+.an-hero-label { font-size: 11px; color: #9aa0a6; margin-bottom: 6px; }
+.an-hero-level { display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 800; line-height: 1.1; }
+.an-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
+.an-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 20px; margin-top: 22px; }
+.an-stat-label { font-size: 11px; color: #8b9098; margin-bottom: 4px; }
+.an-stat-value { font-size: 14px; font-weight: 600; color: #fff; }
+
+.an-h { font-size: 11px; font-weight: 600; color: #8b9098; margin: 22px 0 10px; }
+.an-h:first-child { margin-top: 0; }
+.an-bullets { display: flex; flex-direction: column; gap: 9px; }
+.an-bullet { display: flex; gap: 10px; font-size: 12.5px; line-height: 1.55; color: #c9cdd3; }
+.an-bullet::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: #5f656d; margin-top: 8px; flex-shrink: 0; }
+.an-bullet strong { color: #fff; font-weight: 700; }
+
+.an-verdict-name { font-size: 22px; font-weight: 800; line-height: 1.15; }
+.an-verdict-note { font-size: 12.5px; color: #9aa0a6; margin-top: 5px; }
+
+.an-bar-row + .an-bar-row { margin-top: 14px; }
+.an-bar-top { display: flex; justify-content: space-between; font-size: 12.5px; color: #c9cdd3; margin-bottom: 6px; }
+.an-bar-top strong { color: #fff; font-weight: 600; }
+.an-bar-track { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; }
+.an-bar-fill { height: 100%; border-radius: 3px; }
+
+.an-kv { display: flex; justify-content: space-between; gap: 14px; font-size: 12.5px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.an-kv:last-child { border-bottom: none; }
+.an-kv span:first-child { color: #8b9098; }
+.an-kv span:last-child { color: #fff; font-weight: 600; text-align: right; }
+
+.an-btn { width: 100%; margin-top: 22px; padding: 12px 14px; border: none; border-radius: 10px; color: #fff; font-size: 13px; font-weight: 700; font-family: inherit; }
+.an-route { margin-top: 14px; padding: 16px; border-radius: 12px; background: rgba(30,144,255,0.09); border: 1px solid rgba(30,144,255,0.4); }
+.an-route-name { font-size: 15px; font-weight: 700; color: #fff; margin-top: 4px; }
+.an-route-meta { display: flex; gap: 18px; margin-top: 12px; font-size: 13px; color: #c9cdd3; }
+.an-route-meta strong { color: #fff; }
+.an-alts { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(30,144,255,0.25); }
+.an-alt { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; color: #9aa0a6; margin-top: 7px; }
+
+.an-note { margin-top: 16px; padding: 12px 14px; border-radius: 10px; font-size: 12.5px; line-height: 1.5; }
+.an-empty { padding: 26px 8px; text-align: center; font-size: 12.5px; color: #8b9098; }
+.an-foot { margin-top: 22px; font-size: 10px; line-height: 1.55; color: #626870; }
+`;
 
 // ============================================================
 // HELPERS
@@ -269,68 +345,401 @@ function geometryToLatLng(geometry: any): [number, number][] {
     .map(
       (point: any) => [Number(point[1]), Number(point[0])] as [number, number]
     )
-    .filter(
-      ([lat, lon]) => Number.isFinite(lat) && Number.isFinite(lon)
-    );
+    .filter(([lat, lon]) => Number.isFinite(lat) && Number.isFinite(lon));
+}
+
+function formatConfidence(value: string | number | undefined): string {
+  if (value === undefined || value === null || value === "") return "N/A";
+  if (typeof value === "number") return `${value}%`;
+  return CONFIDENCE_LABELS[value.toLowerCase()] ?? value;
+}
+
+function formatSatellite(fire: LiveFire): string {
+  const raw = fire.satellite;
+  if (!raw) return fire.instrument ?? "VIIRS";
+  return SATELLITE_LABELS[String(raw).toUpperCase()] ?? String(raw);
+}
+
+/** Colour for a fire class name coming from the model. */
+function classColor(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes("forest")) return "#4ade80";
+  if (n.includes("industrial")) return "#fb923c";
+  return "#60a5fa";
+}
+
+/** Colour for the gas assessment word. */
+function gasColor(assessment: string): string {
+  const u = assessment.toUpperCase();
+  if (u.includes("INCONCLUSIVE")) return "#fbbf24";
+  if (/^(NO|NONE|NORMAL|LOW)\b/.test(u)) return "#4ade80";
+  return "#ff5a4d";
+}
+
+/** Splits "Label: value" evidence strings; returns null when not in that shape. */
+function splitKeyValue(text: string): [string, string] | null {
+  const index = text.indexOf(": ");
+  if (index <= 0 || index > 40) return null;
+  return [text.slice(0, index), text.slice(index + 2)];
 }
 
 // ============================================================
-// SMALL REUSABLE POPUP PIECES
+// SMALL POPUP PIECES
 // ============================================================
 
-function InfoCard({
-  title,
-  children,
-  background = "#f7f7f7",
-  border = "1px solid #ddd",
-}: {
-  title: string;
-  children: ReactNode;
-  background?: string;
-  border?: string;
-}) {
-  return (
-    <div
-      style={{
-        marginTop: "12px",
-        padding: "11px",
-        borderRadius: "7px",
-        background,
-        border,
-      }}
-    >
-      <div
-        style={{
-          fontSize: "10px",
-          fontWeight: 800,
-          color: "#777",
-          letterSpacing: "0.5px",
-          marginBottom: "7px",
-        }}
-      >
-        {title}
-      </div>
+/** Turns a 0–1 model score into a word, so no percentages are shown. */
+function levelWord(value: number): string {
+  if (value >= 0.75) return "High";
+  if (value >= 0.5) return "Moderate";
+  if (value >= 0.25) return "Low";
+  return "Very low";
+}
 
-      {children}
+/** Bolds any "3.15×" style multiplier so gas anomalies stand out. */
+function Highlight({ text }: { text: string }) {
+  const parts = text.split(/(\d+(?:\.\d+)?×)/g);
+
+  return (
+    <span>
+      {parts.map((part, i) =>
+        i % 2 === 1 ? <strong key={i}>{part}</strong> : part
+      )}
+    </span>
+  );
+}
+
+function Bullets({ items }: { items?: string[] }) {
+  if (!items || items.length === 0) return null;
+
+  return (
+    <div className="an-bullets">
+      {items.map((item, i) => (
+        <div className="an-bullet" key={i}>
+          <Highlight text={item} />
+        </div>
+      ))}
     </div>
   );
 }
 
-function BulletList({ items }: { items?: string[] }) {
-  if (!items || items.length === 0) {
-    return null;
-  }
+// ============================================================
+// FIRE POPUP CONTENT
+// ============================================================
+
+type PopupTab = "overview" | "classification" | "gas";
+
+interface FirePopupContentProps {
+  fire: LiveFire;
+  result?: AnalysisResult;
+  priority?: PriorityLevel;
+  isLoading: boolean;
+  isRouteLoading: boolean;
+  routeData: RouteResponse | null;
+  routeError: string | null;
+  onRoute: () => void;
+}
+
+function FirePopupContent({
+  fire,
+  result,
+  priority,
+  isLoading,
+  isRouteLoading,
+  routeData,
+  routeError,
+  onRoute,
+}: FirePopupContentProps) {
+  const [tab, setTab] = useState<PopupTab>("overview");
+
+  const color = priority ? PRIORITY_COLORS[priority] : PRIORITY_COLORS.NOT_ANALYZED;
+
+  const prediction = result?.prediction;
+  const industrial = result?.industrial_association;
+  const gas = result?.gas_assessment;
+
+  // Class probabilities, biggest first
+  const probabilities = prediction?.probabilities
+    ? Object.entries(prediction.probabilities)
+        .map(([label, value]) => [label, Number(value)] as [string, number])
+        .sort((a, b) => b[1] - a[1])
+    : [];
+
+  // Supporting evidence: "Label: value" rows vs. plain sentences
+  const evidenceRows: [string, string][] = [];
+  const evidenceNotes: string[] = [];
+
+  (result?.supporting_evidence ?? []).forEach((item) => {
+    const kv = splitKeyValue(item);
+    if (kv) evidenceRows.push(kv);
+    else evidenceNotes.push(item);
+  });
+
+  const station = routeData?.recommended_station;
+
+  const pending = (
+    <div className="an-empty">
+      {isLoading
+        ? "Analyzing this detection…"
+        : "Analysis unavailable. Close and click the detection again to retry."}
+    </div>
+  );
+
+  const tabs: [PopupTab, string][] = [
+    ["overview", "Overview"],
+    ["classification", "Classification"],
+    ["gas", "Gas"],
+  ];
 
   return (
-    <div style={{ marginTop: "7px" }}>
-      {items.map((item, i) => (
-        <div
-          key={i}
-          style={{ fontSize: "11px", color: "#555", marginTop: "4px" }}
-        >
-          • {item}
-        </div>
-      ))}
+    <div className="an-scroll">
+      {/* HEADER */}
+      <div className="an-brand">Agni Netra</div>
+      <div className="an-title">Fire Detection</div>
+      <div className="an-sub">
+        NASA FIRMS · {fire.latitude.toFixed(4)}, {fire.longitude.toFixed(4)}
+      </div>
+
+      {/* TABS */}
+      <div className="an-tabs">
+        {tabs.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={`an-tab${tab === id ? " active" : ""}`}
+            onClick={() => setTab(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ================= OVERVIEW ================= */}
+      {tab === "overview" && (
+        <>
+          {priority ? (
+            <div
+              className="an-hero"
+              style={{ background: `${color}14`, border: `1px solid ${color}55` }}
+            >
+              <div className="an-hero-label">Fire response priority</div>
+              <div className="an-hero-level" style={{ color }}>
+                <span className="an-dot" style={{ background: color }} />
+                {priority}
+              </div>
+            </div>
+          ) : (
+            pending
+          )}
+
+          {priority && result?.priority?.reasons && result.priority.reasons.length > 0 && (
+            <>
+              <div className="an-h" style={{ marginTop: 22 }}>
+                Decision support
+              </div>
+              <Bullets items={result.priority.reasons} />
+            </>
+          )}
+
+          <div className="an-stats">
+            <div>
+              <div className="an-stat-label">Fire power (FRP)</div>
+              <div className="an-stat-value">{fire.frp ?? "N/A"} MW</div>
+            </div>
+            <div>
+              <div className="an-stat-label">Detected on</div>
+              <div className="an-stat-value">{fire.acq_date ?? "N/A"}</div>
+            </div>
+            <div>
+              <div className="an-stat-label">Satellite</div>
+              <div className="an-stat-value">{formatSatellite(fire)}</div>
+            </div>
+            <div>
+              <div className="an-stat-label">Detection confidence</div>
+              <div className="an-stat-value">
+                {formatConfidence(fire.confidence)}
+              </div>
+            </div>
+          </div>
+
+          {/* EMERGENCY ROUTE */}
+          <button
+            type="button"
+            className="an-btn"
+            onClick={onRoute}
+            disabled={isRouteLoading}
+            style={{
+              background: isRouteLoading ? "#555b63" : BRAND_ACCENT,
+              cursor: isRouteLoading ? "wait" : "pointer",
+            }}
+          >
+            {isRouteLoading ? "Calculating route…" : "Get Emergency Route"}
+          </button>
+
+          {station && (
+            <div className="an-route">
+              <div className="an-sub">Recommended station</div>
+              <div className="an-route-name">🚒 {station.station_name}</div>
+              <div className="an-sub">{station.district} district</div>
+
+              <div className="an-route-meta">
+                <span>
+                  ⏱ <strong>{Math.round(station.eta_minutes)} min</strong>
+                </span>
+                <span>
+                  📍 <strong>{station.road_distance_km} km</strong> by road
+                </span>
+              </div>
+
+              {routeData && routeData.alternatives.length > 0 && (
+                <div className="an-alts">
+                  <div className="an-sub">Alternatives</div>
+                  {routeData.alternatives.map((alt) => (
+                    <div className="an-alt" key={alt.station_id}>
+                      <span>{alt.station_name}</span>
+                      <span>
+                        {Math.round(alt.eta_minutes)} min · {alt.road_distance_km} km
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {station.coordinate_status === "NOT_VERIFIED" && (
+                <div style={{ marginTop: 12, fontSize: 11, color: "#fbbf24", lineHeight: 1.5 }}>
+                  ⚠ Station location was found by geocoding and is not
+                  officially verified.
+                </div>
+              )}
+            </div>
+          )}
+
+          {routeError && (
+            <div
+              className="an-note"
+              style={{
+                background: "rgba(255,48,48,0.1)",
+                border: "1px solid rgba(255,48,48,0.45)",
+                color: "#ff8a80",
+              }}
+            >
+              Could not calculate a route: {routeError}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ================= CLASSIFICATION ================= */}
+      {tab === "classification" &&
+        (prediction ? (
+          <>
+            <div className="an-h">Predicted class</div>
+            <div
+              className="an-verdict-name"
+              style={{
+                color: prediction.predicted_class
+                  ? classColor(prediction.predicted_class)
+                  : "#fff",
+              }}
+            >
+              {prediction.predicted_class ?? "Unknown"}
+            </div>
+            {prediction.confidence !== undefined && (
+              <div className="an-verdict-note">
+                {levelWord(Number(prediction.confidence))} model confidence
+              </div>
+            )}
+
+            {probabilities.length > 0 && (
+              <>
+                <div className="an-h">Likelihood by class</div>
+                {probabilities.map(([label, value]) => (
+                  <div className="an-bar-row" key={label}>
+                    <div className="an-bar-top">
+                      <span>{label}</span>
+                      <strong>{levelWord(value)}</strong>
+                    </div>
+                    <div className="an-bar-track">
+                      <div
+                        className="an-bar-fill"
+                        style={{
+                          width: `${Math.max(2, Math.min(100, value * 100))}%`,
+                          background: classColor(label),
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {industrial && industrial.evidence && industrial.evidence.length > 0 && (
+              <>
+                <div className="an-h">
+                  Industrial context
+                  {industrial.level ? ` · ${industrial.level} association` : ""}
+                </div>
+                <Bullets items={industrial.evidence} />
+              </>
+            )}
+
+            {(evidenceRows.length > 0 || evidenceNotes.length > 0) && (
+              <>
+                <div className="an-h">Supporting evidence</div>
+
+                {evidenceRows.map(([label, value], i) => (
+                  <div className="an-kv" key={`${label}-${i}`}>
+                    <span>{label}</span>
+                    <span>{value}</span>
+                  </div>
+                ))}
+
+                {evidenceNotes.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <Bullets items={evidenceNotes} />
+                  </div>
+                )}
+              </>
+            )}
+
+            {result?.context_distance_m !== undefined && (
+              <div className="an-sub" style={{ marginTop: 16 }}>
+                Nearest context: {Number(result.context_distance_m).toFixed(0)} m
+                from the detection
+              </div>
+            )}
+          </>
+        ) : (
+          pending
+        ))}
+
+      {/* ================= GAS ================= */}
+      {tab === "gas" &&
+        (gas ? (
+          <>
+            <div className="an-h">Assessment</div>
+            <div
+              className="an-verdict-name"
+              style={{ color: gas.assessment ? gasColor(gas.assessment) : "#fff" }}
+            >
+              {gas.assessment ?? "No assessment"}
+            </div>
+
+            <div className="an-h">Gas readings vs baseline</div>
+            {gas.evidence && gas.evidence.length > 0 ? (
+              <Bullets items={gas.evidence} />
+            ) : (
+              <div className="an-sub">No elevated gas readings detected.</div>
+            )}
+          </>
+        ) : (
+          pending
+        ))}
+
+      {/* DISCLAIMER */}
+      <div className="an-foot">
+        Based on NASA FIRMS detection data and the satellite, environmental,
+        industrial and atmospheric evidence available to the Agni Netra model.
+      </div>
     </div>
   );
 }
@@ -374,8 +783,58 @@ function FitRoute({ positions }: { positions: [number, number][] }) {
 }
 
 // ============================================================
-// GIS LEGEND
+// LEGENDS
 // ============================================================
+
+const LEGEND_BOX_STYLE = {
+  position: "absolute" as const,
+  bottom: "18px",
+  left: "18px",
+  zIndex: 1000,
+  background: PANEL_BG,
+  border: PANEL_BORDER,
+  color: "white",
+  padding: "14px 16px",
+  borderRadius: PANEL_RADIUS,
+  boxShadow: PANEL_SHADOW,
+  fontFamily: FONT,
+};
+
+const LEGEND_TITLE_STYLE = {
+  fontSize: "11px",
+  fontWeight: 700,
+  letterSpacing: "0.3px",
+  marginBottom: "10px",
+  color: "rgba(255,255,255,0.85)",
+};
+
+function LegendRow({ label, color }: { label: string; color: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        marginBottom: "6px",
+        fontSize: "11px",
+        color: "rgba(255,255,255,0.75)",
+      }}
+    >
+      <span
+        style={{
+          width: "9px",
+          height: "9px",
+          borderRadius: "50%",
+          background: color,
+          display: "inline-block",
+          flexShrink: 0,
+          border: color === "#f5f5f5" ? "1px solid #999" : "none",
+        }}
+      />
+      <span>{label}</span>
+    </div>
+  );
+}
 
 function GISLegend({ layer }: { layer: LayerName }) {
   const legends: Record<
@@ -444,132 +903,25 @@ function GISLegend({ layer }: { layer: LayerName }) {
   const legend = legends[layer];
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        bottom: "18px",
-        left: "18px",
-        zIndex: 1000,
-        background: PANEL_BG,
-        border: PANEL_BORDER,
-        color: "white",
-        padding: "14px 16px",
-        borderRadius: PANEL_RADIUS,
-        minWidth: "150px",
-        maxWidth: "195px",
-        boxShadow: PANEL_SHADOW,
-        fontFamily: FONT,
-      }}
-    >
-      <div
-        style={{
-          fontSize: "11px",
-          fontWeight: 700,
-          letterSpacing: "0.3px",
-          marginBottom: "10px",
-          color: "rgba(255,255,255,0.85)",
-        }}
-      >
-        {legend.title}
-      </div>
+    <div style={{ ...LEGEND_BOX_STYLE, minWidth: "150px", maxWidth: "195px" }}>
+      <div style={LEGEND_TITLE_STYLE}>{legend.title}</div>
 
       {legend.items.map((item) => (
-        <div
-          key={item.label}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            marginBottom: "6px",
-            fontSize: "11px",
-            color: "rgba(255,255,255,0.75)",
-          }}
-        >
-          <span
-            style={{
-              width: "9px",
-              height: "9px",
-              borderRadius: "50%",
-              background: item.color,
-              display: "inline-block",
-              flexShrink: 0,
-              border: item.color === "#f5f5f5" ? "1px solid #999" : "none",
-            }}
-          />
-
-          <span>{item.label}</span>
-        </div>
+        <LegendRow key={item.label} label={item.label} color={item.color} />
       ))}
     </div>
   );
 }
 
-// ============================================================
-// FIRMS PRIORITY LEGEND
-// ============================================================
-
 function FirePriorityLegend() {
-  const items: Array<[PriorityLevel, string]> = [
-    ["CRITICAL", PRIORITY_COLORS.CRITICAL],
-    ["HIGH", PRIORITY_COLORS.HIGH],
-    ["MODERATE", PRIORITY_COLORS.MODERATE],
-    ["LOW", PRIORITY_COLORS.LOW],
-  ];
+  const levels: PriorityLevel[] = ["CRITICAL", "HIGH", "MODERATE", "LOW"];
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        bottom: "18px",
-        left: "18px",
-        zIndex: 1000,
-        background: PANEL_BG,
-        border: PANEL_BORDER,
-        color: "white",
-        padding: "14px 16px",
-        borderRadius: PANEL_RADIUS,
-        minWidth: "160px",
-        boxShadow: PANEL_SHADOW,
-        fontFamily: FONT,
-      }}
-    >
-      <div
-        style={{
-          fontSize: "11px",
-          fontWeight: 700,
-          letterSpacing: "0.3px",
-          marginBottom: "10px",
-          color: "rgba(255,255,255,0.85)",
-        }}
-      >
-        Fire response priority
-      </div>
+    <div style={{ ...LEGEND_BOX_STYLE, minWidth: "160px" }}>
+      <div style={LEGEND_TITLE_STYLE}>Fire response priority</div>
 
-      {items.map(([label, color]) => (
-        <div
-          key={label}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            marginBottom: "6px",
-            fontSize: "11px",
-            color: "rgba(255,255,255,0.75)",
-          }}
-        >
-          <span
-            style={{
-              width: "9px",
-              height: "9px",
-              borderRadius: "50%",
-              background: color,
-              display: "inline-block",
-              flexShrink: 0,
-            }}
-          />
-
-          <span>{label}</span>
-        </div>
+      {levels.map((level) => (
+        <LegendRow key={level} label={level} color={PRIORITY_COLORS[level]} />
       ))}
     </div>
   );
@@ -612,9 +964,18 @@ function GISLayerControl({ layers, setLayers }: GISLayerControlProps) {
         onChange={() => toggleLayer(key)}
         style={{ accentColor: BRAND_ACCENT }}
       />
-
       {label}
     </label>
+  );
+
+  const divider = (
+    <div
+      style={{
+        height: "1px",
+        background: "rgba(255,255,255,0.1)",
+        margin: "10px 0",
+      }}
+    />
   );
 
   if (minimized) {
@@ -706,13 +1067,7 @@ function GISLayerControl({ layers, setLayers }: GISLayerControlProps) {
       {renderCheckbox("ndwi", "NDWI")}
       {renderCheckbox("ndbi", "NDBI")}
 
-      <div
-        style={{
-          height: "1px",
-          background: "rgba(255,255,255,0.1)",
-          margin: "10px 0",
-        }}
-      />
+      {divider}
 
       <div
         style={{
@@ -730,13 +1085,7 @@ function GISLayerControl({ layers, setLayers }: GISLayerControlProps) {
       {renderCheckbox("co", "CO anomaly")}
       {renderCheckbox("ch4", "CH₄ anomaly")}
 
-      <div
-        style={{
-          height: "1px",
-          background: "rgba(255,255,255,0.1)",
-          margin: "10px 0",
-        }}
-      />
+      {divider}
 
       {renderCheckbox("persistence", "Fire persistence")}
     </div>
@@ -850,11 +1199,7 @@ function FireMap() {
   // ==========================================================
 
   const [fires, setFires] = useState<LiveFire[]>([]);
-
-  const [analysis, setAnalysis] = useState<Record<string, AnalysisResult>>(
-    {}
-  );
-
+  const [analysis, setAnalysis] = useState<Record<string, AnalysisResult>>({});
   const [loadingFire, setLoadingFire] = useState<Record<string, boolean>>({});
 
   // ---- Emergency route state ----
@@ -877,7 +1222,6 @@ function FireMap() {
   });
 
   const [gisData, setGISData] = useState<Record<string, GISPoint[]>>({});
-
   const [loadingGIS, setLoadingGIS] = useState<string | null>(null);
 
   // ==========================================================
@@ -1222,6 +1566,8 @@ function FireMap() {
         overflow: "hidden",
       }}
     >
+      <style>{POPUP_CSS}</style>
+
       <MapContainer
         center={[20.3, 84.5]}
         zoom={2}
@@ -1346,15 +1692,9 @@ function FireMap() {
         {layers.firms &&
           fires.map((fire, index) => {
             const key = getFireKey(fire);
-            const result = analysis[key];
             const priority = getPriority(fire);
             const color = getPriorityColor(fire);
-            const isLoading = Boolean(loadingFire[key]);
-            const isRouteLoading = loadingRoute && routeFireKey === key;
-            const showRouteResult =
-              routeFireKey === key && !loadingRoute && routeData;
-            const showRouteError =
-              routeFireKey === key && !loadingRoute && routeError;
+            const isRouteForThisFire = routeFireKey === key && !loadingRoute;
 
             return (
               <CircleMarker
@@ -1374,483 +1714,22 @@ function FireMap() {
                 }}
               >
                 <Popup
-                  maxWidth={380}
-                  minWidth={300}
+                  className="agni-popup"
+                  maxWidth={400}
+                  minWidth={360}
                   autoPan
                   autoPanPadding={[30, 30]}
                 >
-                  <div
-                    style={{
-                      width: "100%",
-                      maxHeight: "430px",
-                      overflowY: "auto",
-                      overflowX: "hidden",
-                      paddingRight: "8px",
-                      boxSizing: "border-box",
-                      fontFamily: FONT,
-                    }}
-                  >
-                    {/* BRAND */}
-                    <div
-                      style={{
-                        fontSize: "11px",
-                        fontWeight: 800,
-                        letterSpacing: "1.6px",
-                        color: BRAND_ACCENT,
-                        marginBottom: "5px",
-                      }}
-                    >
-                      Agni Netra
-                    </div>
-
-                    <h3 style={{ margin: "0 0 5px 0", fontSize: "20px" }}>
-                      Fire Detection
-                    </h3>
-
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#666",
-                        marginBottom: "12px",
-                      }}
-                    >
-                      NASA FIRMS Detection
-                    </div>
-
-                    {/* FIRMS DATA */}
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gap: "7px",
-                        fontSize: "12px",
-                      }}
-                    >
-                      <div>
-                        <strong>FRP:</strong> {fire.frp ?? "N/A"} MW
-                      </div>
-
-                      <div>
-                        <strong>Date:</strong> {fire.acq_date ?? "N/A"}
-                      </div>
-
-                      <div>
-                        <strong>Satellite:</strong>{" "}
-                        {fire.satellite ?? fire.instrument ?? "VIIRS"}
-                      </div>
-
-                      <div>
-                        <strong>Confidence:</strong>{" "}
-                        {fire.confidence ?? "N/A"}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: "8px",
-                        fontSize: "11px",
-                        color: "#666",
-                      }}
-                    >
-                      Coordinates: {fire.latitude.toFixed(4)},{" "}
-                      {fire.longitude.toFixed(4)}
-                    </div>
-
-                    {/* RESPONSE PRIORITY */}
-                    {priority && (
-                      <div
-                        style={{
-                          marginTop: "14px",
-                          padding: "12px",
-                          borderRadius: "8px",
-                          background: PRIORITY_BACKGROUNDS[priority],
-                          border: `1px solid ${color}`,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: "10px",
-                            fontWeight: 800,
-                            color: "#777",
-                            letterSpacing: "0.5px",
-                            marginBottom: "5px",
-                          }}
-                        >
-                          Fire response priority
-                        </div>
-
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            fontSize: "19px",
-                            fontWeight: 800,
-                            color,
-                          }}
-                        >
-                          <span
-                            style={{
-                              width: "10px",
-                              height: "10px",
-                              borderRadius: "50%",
-                              background: color,
-                              display: "inline-block",
-                            }}
-                          />
-
-                          {priority}
-                        </div>
-
-                        {result?.priority?.score !== undefined && (
-                          <div
-                            style={{
-                              marginTop: "5px",
-                              fontSize: "10px",
-                              color: "#777",
-                            }}
-                          >
-                            Priority score: {result.priority.score}
-                          </div>
-                        )}
-
-                        {result?.priority?.reasons &&
-                          result.priority.reasons.length > 0 && (
-                            <div style={{ marginTop: "9px" }}>
-                              <div
-                                style={{
-                                  fontSize: "10px",
-                                  fontWeight: 800,
-                                  color: "#777",
-                                  letterSpacing: "0.4px",
-                                  marginBottom: "4px",
-                                }}
-                              >
-                                Decision support
-                              </div>
-
-                              <BulletList items={result.priority.reasons} />
-                            </div>
-                          )}
-                      </div>
-                    )}
-
-                    {/* EMERGENCY ROUTE BUTTON */}
-                    <button
-                      type="button"
-                      onClick={() => calculateEmergencyRoute(fire)}
-                      disabled={isRouteLoading}
-                      style={{
-                        width: "100%",
-                        marginTop: "14px",
-                        padding: "10px 12px",
-                        border: "none",
-                        borderRadius: "7px",
-                        background: isRouteLoading ? "#999" : BRAND_ACCENT,
-                        color: "white",
-                        fontSize: "12px",
-                        fontWeight: 700,
-                        cursor: isRouteLoading ? "wait" : "pointer",
-                      }}
-                    >
-                      {isRouteLoading
-                        ? "Calculating emergency route..."
-                        : "Get Emergency Route"}
-                    </button>
-
-                    {/* EMERGENCY ROUTE RESULT */}
-                    {showRouteResult && routeData?.recommended_station && (
-                      <div
-                        style={{
-                          marginTop: "10px",
-                          padding: "11px",
-                          borderRadius: "7px",
-                          background: "#eef6ff",
-                          border: "1px solid #1e90ff",
-                          fontSize: "11px",
-                          color: "#1f2937",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: "10px",
-                            fontWeight: 800,
-                            color: "#777",
-                            letterSpacing: "0.5px",
-                            marginBottom: "5px",
-                          }}
-                        >
-                          Recommended response
-                        </div>
-
-                        <div style={{ fontSize: "15px", fontWeight: 800 }}>
-                          🚒 {routeData.recommended_station.station_name}
-                        </div>
-
-                        <div style={{ color: "#555" }}>
-                          {routeData.recommended_station.district} district
-                        </div>
-
-                        <div style={{ marginTop: "6px", fontSize: "12px" }}>
-                          ⏱️{" "}
-                          <strong>
-                            {Math.round(
-                              routeData.recommended_station.eta_minutes
-                            )}{" "}
-                            min
-                          </strong>{" "}
-                          · 📍 {routeData.recommended_station.road_distance_km}{" "}
-                          km by road
-                        </div>
-
-                        {routeData.alternatives.length > 0 && (
-                          <div
-                            style={{
-                              marginTop: "9px",
-                              paddingTop: "8px",
-                              borderTop: "1px solid #c9dff5",
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontWeight: 700,
-                                color: "#555",
-                                marginBottom: "3px",
-                              }}
-                            >
-                              Alternative stations
-                            </div>
-
-                            {routeData.alternatives.map((alternative) => (
-                              <div
-                                key={alternative.station_id}
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  marginTop: "3px",
-                                }}
-                              >
-                                <span>{alternative.station_name}</span>
-
-                                <span>
-                                  {Math.round(alternative.eta_minutes)} min ·{" "}
-                                  {alternative.road_distance_km} km
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {routeData.recommended_station.coordinate_status ===
-                          "NOT_VERIFIED" && (
-                          <div
-                            style={{
-                              marginTop: "8px",
-                              color: "#8a4b08",
-                              fontSize: "10px",
-                            }}
-                          >
-                            ⚠ This station location was found by geocoding and
-                            is not officially verified.
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* EMERGENCY ROUTE ERROR */}
-                    {showRouteError && (
-                      <div
-                        style={{
-                          marginTop: "10px",
-                          padding: "9px",
-                          borderRadius: "7px",
-                          background: "#fff0f0",
-                          border: "1px solid #ff3030",
-                          fontSize: "11px",
-                          color: "#8a1c1c",
-                        }}
-                      >
-                        Could not calculate a route: {routeError}
-                      </div>
-                    )}
-
-                    {/* MODEL ANALYSIS */}
-                    {result?.prediction && (
-                      <InfoCard
-                        title="AI fire classification"
-                        background="#f7f9fc"
-                        border="1px solid #dce3ec"
-                      >
-                        {result.prediction.predicted_class && (
-                          <div style={{ fontSize: "12px", marginBottom: "5px" }}>
-                            <strong>Predicted class:</strong>{" "}
-                            {result.prediction.predicted_class}
-                          </div>
-                        )}
-
-                        {result.prediction.confidence !== undefined && (
-                          <div style={{ fontSize: "12px" }}>
-                            <strong>Model confidence:</strong>{" "}
-                            {(
-                              Number(result.prediction.confidence) * 100
-                            ).toFixed(1)}
-                            %
-                          </div>
-                        )}
-
-                        {result.prediction.probabilities && (
-                          <div style={{ marginTop: "8px" }}>
-                            {Object.entries(
-                              result.prediction.probabilities
-                            ).map(([label, probability]) => (
-                              <div
-                                key={label}
-                                style={{
-                                  fontSize: "11px",
-                                  marginTop: "4px",
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                }}
-                              >
-                                <span>{label}</span>
-
-                                <strong>
-                                  {(Number(probability) * 100).toFixed(1)}%
-                                </strong>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </InfoCard>
-                    )}
-
-                    {/* INDUSTRIAL ASSOCIATION */}
-                    {result?.industrial_association && (
-                      <InfoCard title="Industrial fire assessment">
-                        {result.industrial_association.level && (
-                          <div style={{ fontSize: "12px", marginBottom: "5px" }}>
-                            <strong>Association:</strong>{" "}
-                            {result.industrial_association.level}
-                          </div>
-                        )}
-
-                        {result.industrial_association.context_score !==
-                          undefined && (
-                          <div style={{ fontSize: "11px", color: "#666" }}>
-                            Context score:{" "}
-                            {result.industrial_association.context_score}
-                          </div>
-                        )}
-
-                        <BulletList
-                          items={result.industrial_association.evidence}
-                        />
-                      </InfoCard>
-                    )}
-
-                    {/* GAS ASSESSMENT */}
-                    {result?.gas_assessment && (
-                      <InfoCard title="Gas anomaly assessment">
-                        {result.gas_assessment.assessment && (
-                          <div style={{ fontSize: "12px", marginBottom: "5px" }}>
-                            <strong>Assessment:</strong>{" "}
-                            {result.gas_assessment.assessment}
-                          </div>
-                        )}
-
-                        {result.gas_assessment.score !== undefined && (
-                          <div style={{ fontSize: "11px", color: "#666" }}>
-                            Gas anomaly score: {result.gas_assessment.score}
-                          </div>
-                        )}
-
-                        <BulletList items={result.gas_assessment.evidence} />
-                      </InfoCard>
-                    )}
-
-                    {/* SUPPORTING EVIDENCE */}
-                    {result?.supporting_evidence &&
-                      result.supporting_evidence.length > 0 && (
-                        <InfoCard title="Supporting evidence">
-                          {result.supporting_evidence.map((evidence, i) => (
-                            <div
-                              key={i}
-                              style={{
-                                fontSize: "11px",
-                                color: "#555",
-                                marginTop: "4px",
-                              }}
-                            >
-                              • {evidence}
-                            </div>
-                          ))}
-                        </InfoCard>
-                      )}
-
-                    {/* CONTEXT DISTANCE */}
-                    {result?.context_distance_m !== undefined && (
-                      <div
-                        style={{
-                          marginTop: "10px",
-                          fontSize: "11px",
-                          color: "#666",
-                        }}
-                      >
-                        Context distance:{" "}
-                        {Number(result.context_distance_m).toFixed(0)} m
-                      </div>
-                    )}
-
-                    {/* ANALYSIS IN PROGRESS */}
-                    {!priority && isLoading && (
-                      <div
-                        style={{
-                          marginTop: "14px",
-                          padding: "11px",
-                          borderRadius: "7px",
-                          background: "#fff7ed",
-                          border: "1px solid #f59e0b",
-                          fontSize: "11px",
-                          color: "#8a4b08",
-                        }}
-                      >
-                        <strong>Analyzing fire response priority...</strong>
-                      </div>
-                    )}
-
-                    {/* NOT AVAILABLE */}
-                    {!priority && !isLoading && (
-                      <div
-                        style={{
-                          marginTop: "14px",
-                          padding: "10px",
-                          borderRadius: "7px",
-                          background: "#f7f7f7",
-                          fontSize: "11px",
-                          color: "#666",
-                        }}
-                      >
-                        Response priority unavailable. Click the detection to
-                        retry analysis.
-                      </div>
-                    )}
-
-                    {/* DISCLAIMER */}
-                    <div
-                      style={{
-                        marginTop: "14px",
-                        paddingTop: "9px",
-                        borderTop: "1px solid #e5e5e5",
-                        fontSize: "9px",
-                        lineHeight: 1.45,
-                        color: "#888",
-                      }}
-                    >
-                      Analysis is based on NASA FIRMS detection data and the
-                      supporting satellite, environmental, industrial and
-                      atmospheric evidence available to the Agni Netra model.
-                    </div>
-                  </div>
+                  <FirePopupContent
+                    fire={fire}
+                    result={analysis[key]}
+                    priority={priority}
+                    isLoading={Boolean(loadingFire[key])}
+                    isRouteLoading={loadingRoute && routeFireKey === key}
+                    routeData={isRouteForThisFire ? routeData : null}
+                    routeError={isRouteForThisFire ? routeError : null}
+                    onRoute={() => calculateEmergencyRoute(fire)}
+                  />
                 </Popup>
               </CircleMarker>
             );

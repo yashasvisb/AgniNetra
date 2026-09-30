@@ -38,7 +38,7 @@ const PIPELINE = [
   },
   {
     title: "Classify",
-    text: "A machine-learning model estimates the source of the heat, with a confidence score and a probability for every class.",
+    text: "Machine-learning is used to estimate the source of the heat, with a confidence score and a probability for every class.",
   },
   {
     title: "Prioritise",
@@ -50,46 +50,6 @@ const PIPELINE = [
   },
 ];
 
-const SOURCES = [
-  {
-    name: "NASA FIRMS",
-    role: "Thermal anomaly detections",
-    use: "The live detection layer",
-  },
-  {
-    name: "Industrial and land-cover context",
-    role: "Facility proximity and land cover for Odisha",
-    use: "Separates industrial heat from vegetation fires",
-  },
-  {
-    name: "Satellite indices",
-    role: "NDVI, NDWI, NDBI and fire persistence",
-    use: "Environmental evidence for the classifier",
-  },
-  {
-    name: "Atmospheric layers",
-    role: "NO₂, SO₂, CO and CH₄ anomalies",
-    use: "Supporting evidence, shown as map overlays",
-  },
-  {
-    name: "Fire station dataset",
-    role: "345 stations with coordinates and districts",
-    use: "Candidate stations for emergency response",
-  },
-  {
-    name: "Mapbox Directions",
-    role: "Driving routes with live traffic",
-    use: "Travel time from each station to the fire",
-  },
-];
-
-const LIMITS = [
-  "A FIRMS pixel covers hundreds of metres, so a detection cannot always be tied to one facility.",
-  "Satellites pass periodically. Detections are near-real-time, not continuous.",
-  "Atmospheric gas layers are satellite anomaly signals. They support an assessment but do not confirm a leak.",
-  "Class and priority are decision support. A responder should verify on the ground.",
-  "Some station coordinates come from geocoding and are not officially verified. The route panel flags these.",
-];
 
 function Home() {
   const [fires, setFires] = useState<Detection[] | null>(null);
@@ -152,9 +112,9 @@ function Home() {
 
             <p className="hero-lede">
               Agni Netra classifies satellite thermal detections, separating
-              industrial fires from forest fires and other heat sources. It
+              industrial fires from forest fires and other natural fires. It
               ranks each event by response priority and routes the fastest
-              fire station to the scene.
+              fire station to the scene. It also detects possible gas leaks.
             </p>
 
             <div className="hero-actions">
@@ -198,8 +158,7 @@ function Home() {
             </div>
 
             <figcaption className="radar-caption">
-              Current FIRMS detections over Odisha. Schematic view, not to
-              scale.
+              Current FIRMS detections over Odisha. 
             </figcaption>
           </figure>
         </div>
@@ -330,48 +289,6 @@ function Home() {
         </div>
       </section>
 
-      {/* ================= DATA SOURCES ================= */}
-      <section className="section section--ruled">
-        <div className="wrap">
-          <div className="section-head">
-            <h2>Data behind the classification</h2>
-          </div>
-
-          <div className="sources" role="table" aria-label="Data sources">
-            {SOURCES.map((source) => (
-              <div className="source-row" role="row" key={source.name}>
-                <div className="source-name" role="cell">
-                  {source.name}
-                </div>
-                <div role="cell">{source.role}</div>
-                <div className="source-use" role="cell">
-                  {source.use}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ================= LIMITS ================= */}
-      <section className="section section--ruled">
-        <div className="wrap limits-grid">
-          <div className="section-head">
-            <h2>What it cannot tell you</h2>
-
-            <p>
-              Satellite monitoring has limits. Stating them up front is part of
-              using the system responsibly.
-            </p>
-          </div>
-
-          <ul className="limits">
-            {LIMITS.map((limit) => (
-              <li key={limit}>{limit}</li>
-            ))}
-          </ul>
-        </div>
-      </section>
 
       {/* ================= CTA ================= */}
       <section className="cta-band">

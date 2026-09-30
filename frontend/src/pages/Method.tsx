@@ -36,7 +36,7 @@ function Method() {
         </p>
 
         <p>
-          A machine-learning model uses these features to estimate the source
+          Machine-learning models use these features to estimate the source
           of the heat. The result includes the predicted class, the model
           confidence and the probability of every class, so an analyst can see
           how close a call was.
@@ -97,10 +97,7 @@ function Method() {
             Class and priority support a decision. They do not replace ground
             verification.
           </li>
-          <li>
-            Some fire station coordinates come from geocoding and are not
-            officially verified. The route panel marks these stations.
-          </li>
+         
         </ul>
       </section>
 

@@ -12,6 +12,7 @@ from firms import get_live_fires
 from predictor import predict_event
 from live_predictor import predict_live_fire
 from station_router import find_best_station
+from live_gas import get_gas_anomaly
 
 from context import get_gis_layer
 app = FastAPI(
@@ -119,6 +120,32 @@ def predict_live(fire: dict):
     except Exception as e:
 
         # Prints the full error location in the terminal
+        traceback.print_exc()
+
+        return {
+            "success": False,
+            "error": f"{type(e).__name__}: {e}"
+        }
+
+
+# =========================
+# LIVE GAS ANOMALY (Sentinel-5P current vs 2022-2024 same-season baseline)
+# =========================
+
+@app.get("/gas-anomaly")
+def gas_anomaly(lat: float, lon: float):
+
+    try:
+
+        result = get_gas_anomaly(lat, lon)
+
+        return {
+            "success": True,
+            **result
+        }
+
+    except Exception as e:
+
         traceback.print_exc()
 
         return {
